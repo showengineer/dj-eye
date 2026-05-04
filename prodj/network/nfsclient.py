@@ -10,10 +10,15 @@ from .packets_nfs import getNfsCallStruct, getNfsResStruct, MountMntArgs, MountM
 from .rpcreceiver import RpcReceiver
 from .nfsdownload import NfsDownload, generic_file_download_done_callback
 
+def new_socket_reader_loop():
+  if os.name == "nt" and hasattr(asyncio, "SelectorEventLoop"):
+    return asyncio.SelectorEventLoop()
+  return asyncio.new_event_loop()
+
 class NfsClient:
   def __init__(self, prodj):
     self.prodj = prodj
-    self.loop = asyncio.new_event_loop()
+    self.loop = new_socket_reader_loop()
     self.receiver = RpcReceiver()
 
     self.rpc_auth_stamp = 0xdeadbeef
