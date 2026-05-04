@@ -2,6 +2,7 @@
 
 import sys
 import logging
+import time
 from threading import Lock
 from PyQt5.QtCore import pyqtSignal, QSize, Qt
 from PyQt5.QtWidgets import QApplication, QHBoxLayout, QOpenGLWidget, QSlider, QWidget
@@ -31,6 +32,8 @@ class GLWaveformWidget(QOpenGLWidget):
     self.waveform_colored = False
     self.data_lock = Lock()
     self.time_offset = 0
+    self.time_offset_timestamp = None
+    self.time_offset_correction = 0
     self.zoom_seconds = 4
     self.loop = None  # tuple(start_sec, end_sec)
     self.pitch = 1 # affects animation speed
@@ -85,29 +88,33 @@ class GLWaveformWidget(QOpenGLWidget):
   # current time in seconds at position marker
   def setPosition(self, position, pitch=1, state="playing"):
     logging.debug("setPosition {} pitch {} state {}".format(position, pitch, state))
+    now = time.time()
+    if self.time_offset_timestamp is not None and self.pitch != 0:
+      self.time_offset += self.pitch * (now - self.time_offset_timestamp)
+      self.time_offset_timestamp = now
     if position is not None and pitch is not None:
       if state in PlayStateStopped:
         pitch = 0
       self.pitch = pitch
       if round(self.time_offset * 1000) != round(position * 1000):
         #logging.debug("time offset diff %.6f", position-self.time_offset)
-        offset = abs(position - self.time_offset)
-        if state in PlayStatePlaying and offset < 0.05: # ignore negligible offset
+        offset = position - self.time_offset
+        abs_offset = abs(offset)
+        if state in PlayStatePlaying and abs_offset < 0.05: # ignore negligible offset
           return
         
-        if state in PlayStatePlaying and offset < 0.1: # small enough to compensate by temporary pitch modification
-          if position > self.time_offset:
-            #logging.debug("increasing pitch to catch up")
-            self.pitch += 0.01
-          else:
-            #logging.debug("decreasing pitch to fall behind")
-            self.pitch -= 0.01
+        if state in PlayStatePlaying and abs_offset < 1:
+          self.time_offset_correction = offset
         else: # too large to compensate or non-monotonous -> direct assignment
           #logging.debug("offset %.6f, direct assignment", offset) 
           self.time_offset = position
+          self.time_offset_correction = 0
           self.update()
+      self.time_offset_timestamp = now
     else:
       self.time_offset = 0
+      self.time_offset_timestamp = now
+      self.time_offset_correction = 0
       self.pitch = 0
 
   def wheelEvent(self, event):
@@ -123,8 +130,17 @@ class GLWaveformWidget(QOpenGLWidget):
       self.update()
 
   def timerEvent(self, event):
-    if self.pitch != 0:
-      self.time_offset += self.pitch*self.update_interval_ms / 1000
+    now = time.time()
+    if self.time_offset_timestamp is None:
+      self.time_offset_timestamp = now
+    dt = now - self.time_offset_timestamp
+    self.time_offset_timestamp = now
+    if self.pitch != 0 or self.time_offset_correction != 0:
+      self.time_offset += self.pitch*dt
+      if self.time_offset_correction != 0:
+        correction = self.time_offset_correction * min(1, dt / 0.5)
+        self.time_offset += correction
+        self.time_offset_correction -= correction
       self.update()
 
   def initializeGL(self):
