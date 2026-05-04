@@ -13,6 +13,8 @@ from prodj.network.packets import PlayStatePlaying, PlayStateStopped
 from prodj.pdblib.usbanlzdatabase import UsbAnlzDatabase
 from .waveform_blue_map import blue_map
 
+POSITION_DISCONTINUITY_THRESHOLD = 0.250
+
 class GLWaveformWidget(QOpenGLWidget):
   waveform_zoom_changed_signal = pyqtSignal(int)
 
@@ -87,23 +89,27 @@ class GLWaveformWidget(QOpenGLWidget):
 
   # current time in seconds at position marker
   def setPosition(self, position, pitch=1, state="playing"):
-    logging.debug("setPosition {} pitch {} state {}".format(position, pitch, state))
-    now = time.time()
+    logging.log(5, "setPosition {} pitch {} state {}".format(position, pitch, state))
+    now = time.monotonic()
     if self.time_offset_timestamp is not None and self.pitch != 0:
       self.time_offset += self.pitch * (now - self.time_offset_timestamp)
       self.time_offset_timestamp = now
     if position is not None and pitch is not None:
-      if state in PlayStateStopped:
+      stopped = state in PlayStateStopped
+      if stopped:
         pitch = 0
       self.pitch = pitch
       if round(self.time_offset * 1000) != round(position * 1000):
         #logging.debug("time offset diff %.6f", position-self.time_offset)
         offset = position - self.time_offset
         abs_offset = abs(offset)
-        if state in PlayStatePlaying and abs_offset < 0.05: # ignore negligible offset
+        if stopped:
+          self.time_offset = position
+          self.time_offset_correction = 0
+          self.update()
+        elif state in PlayStatePlaying and abs_offset < 0.05: # ignore negligible offset
           return
-        
-        if state in PlayStatePlaying and abs_offset < 1:
+        elif state in PlayStatePlaying and abs_offset < POSITION_DISCONTINUITY_THRESHOLD:
           self.time_offset_correction = offset
         else: # too large to compensate or non-monotonous -> direct assignment
           #logging.debug("offset %.6f, direct assignment", offset) 
@@ -130,7 +136,7 @@ class GLWaveformWidget(QOpenGLWidget):
       self.update()
 
   def timerEvent(self, event):
-    now = time.time()
+    now = time.monotonic()
     if self.time_offset_timestamp is None:
       self.time_offset_timestamp = now
     dt = now - self.time_offset_timestamp

@@ -275,11 +275,11 @@ class PlayerWidget(QFrame):
       return None
     if self.time_pitch == 0 or self.time_position_timestamp is None:
       return self.time_position
-    return self.time_position + self.time_pitch * (time.time() - self.time_position_timestamp)
+    return self.time_position + self.time_pitch * (time.monotonic() - self.time_position_timestamp)
 
   def setPlaybackTime(self, seconds, total=None, pitch=1, state="playing"):
     self.time_position = seconds
-    self.time_position_timestamp = time.time()
+    self.time_position_timestamp = time.monotonic()
     self.time_total = total
     self.time_play_state = state
     self.time_pitch = 0 if seconds is None or pitch is None or state in PlayStateStopped else pitch

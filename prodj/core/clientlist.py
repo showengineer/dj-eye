@@ -2,7 +2,53 @@ import time
 import logging
 from datetime import datetime
 
+from prodj.network.packets import PlayStateStopped
 from prodj.network.packets_dump import pretty_flags
+
+POSITION_DISCONTINUITY_THRESHOLD = 0.250
+PITCH_DISCONTINUITY_THRESHOLD = 1.500
+POSITION_CORRECTION_GAIN = 0.150
+
+class TransportClock:
+  def __init__(self):
+    self.position = None
+    self.timestamp = None
+    self.rate = 0
+
+  def reset(self, position=None, rate=0):
+    self.position = position
+    self.timestamp = time.monotonic()
+    self.rate = rate
+
+  def setRate(self, rate):
+    self.update()
+    self.rate = rate
+
+  def update(self):
+    if self.position is None:
+      return None
+    now = time.monotonic()
+    if self.timestamp is not None and self.rate != 0:
+      self.position += self.rate * (now - self.timestamp)
+    self.timestamp = now
+    return self.position
+
+  def applyMeasurement(self, measured_position, rate, force_discontinuity=False):
+    predicted_position = self.update()
+    if measured_position is None:
+      self.reset(None, 0)
+      return predicted_position, None, None, False
+    correction = None if predicted_position is None else measured_position - predicted_position
+    is_discontinuity = force_discontinuity or (
+      correction is not None and abs(correction) > POSITION_DISCONTINUITY_THRESHOLD
+    )
+    if predicted_position is None or is_discontinuity:
+      self.reset(measured_position, rate)
+      return predicted_position, measured_position, None, True
+    self.position = predicted_position + correction * POSITION_CORRECTION_GAIN
+    self.timestamp = time.monotonic()
+    self.rate = rate
+    return predicted_position, measured_position, correction, False
 
 class ClientList:
   def __init__(self, prodj):
@@ -52,6 +98,7 @@ class ClientList:
   def updatePositionByBeat(self, player_number, new_beat_count, new_play_state):
     c = self.getClient(player_number)
     identifier = (c.loaded_player_number, c.loaded_slot, c.track_id)
+    measured_position = None
     if identifier in self.prodj.data.beatgrid_store:
       if new_beat_count > 0:
         if (c.play_state == "cued" and new_play_state == "cueing") or (c.play_state == "playing" and new_play_state == "paused") or (c.play_state == "paused" and new_play_state == "playing"):
@@ -60,12 +107,10 @@ class ClientList:
           new_beat_count -= 1
         beatgrid = self.prodj.data.beatgrid_store[identifier]
         if beatgrid is not None and len(beatgrid) > new_beat_count:
-          c.position = beatgrid[new_beat_count]["time"] / 1000
+          measured_position = beatgrid[new_beat_count]["time"] / 1000
       else:
-        c.position = 0
-    else:
-      c.position = None
-    c.position_timestamp = time.time()
+        measured_position = 0
+    c.applyPositionMeasurement(measured_position, new_play_state, "beatgrid", "beat {}".format(new_beat_count))
 
   def logPlayedTrackCallback(self, request, source_player_number, slot, item_id, reply):
     if request != "metadata" or reply is None or len(reply) == 0:
@@ -145,9 +190,9 @@ class ClientList:
         client_changed = True
       
       new_position = beat_packet.content.playhead / 1000
-      if c.position != new_position:
-        c.position = new_position
-        c.position_timestamp = time.time()
+      old_position = c.position
+      c.applyPositionMeasurement(new_position, c.play_state, "absolute", "packet")
+      if c.position != old_position:
         client_changed = True
     if self.client_change_callback and client_changed:
       self.client_change_callback(c.player_number)
@@ -199,9 +244,16 @@ class ClientList:
       client_changed = True
 
     if c.type == "cdj":
+      new_actual_pitch = status_packet.content.actual_pitch
+      if c.actual_pitch != new_actual_pitch:
+        c.actual_pitch = new_actual_pitch
+        client_changed = True
+
       new_beat_count = status_packet.content.beat_count if status_packet.content.beat_count != 0xffffffff else 0
       new_play_state = status_packet.content.play_state
-      if not c.supports_absolute_position_packets:
+      if c.supports_absolute_position_packets:
+        c.updatePositionByPitch()
+      else:
         if new_beat_count != c.beat_count or new_play_state != c.play_state:
           self.updatePositionByBeat(c.player_number, new_beat_count, new_play_state) # position tracking, set new absolute grid value
         else: # otherwise, increment by pitch
@@ -247,11 +299,6 @@ class ClientList:
 
       c.fw = status_packet.content.firmware
 
-      new_actual_pitch = status_packet.content.actual_pitch
-      if c.actual_pitch != new_actual_pitch:
-        c.actual_pitch = new_actual_pitch
-        client_changed = True
-
       new_cue_distance = status_packet.content.cue_distance if status_packet.content.cue_distance != 511 else "-"
       if c.cue_distance != new_cue_distance:
         c.cue_distance = new_cue_distance
@@ -283,7 +330,7 @@ class ClientList:
         c.track_id = new_track_id
         client_changed = True
         c.metadata = None
-        c.position = None
+        c.resetPosition()
         if c.loaded_slot in ["usb", "sd"] and c.track_analyze_type == "rekordbox":
           if self.log_played_tracks:
             self.prodj.data.get_metadata(c.loaded_player_number, c.loaded_slot, c.track_id, self.logPlayedTrackCallback)
@@ -348,6 +395,7 @@ class Client:
     self.track_id = 0
     self.position = None # position in track in seconds, 0 if not determinable
     self.position_timestamp = None
+    self.transport_clock = TransportClock()
     self.on_air = False
     # internal use
     self.metadata = None
@@ -357,15 +405,44 @@ class Client:
 
   # calculate the current position by linear interpolation
   def updatePositionByPitch(self):
-    if self.position is None or self.actual_pitch == 0:
-      return
-    pitch = self.actual_pitch
-    if self.play_state in ["cued"]:
-      pitch = 0
-    now = time.time()
-    self.position += pitch*(now-self.position_timestamp)
-    self.position_timestamp = now
+    rate = self.getTransportRate(self.play_state)
+    self.transport_clock.setRate(rate)
+    self.position = self.transport_clock.position
+    self.position_timestamp = self.transport_clock.timestamp
     #logging.debug("Track position inc %f actual_pitch %.6f play_state %s beat %d", self.position, self.actual_pitch, self.play_state, self.beat_count)
+    return self.position
+
+  def getTransportRate(self, play_state=None):
+    if play_state is None:
+      play_state = self.play_state
+    if self.actual_pitch == 0 or play_state in PlayStateStopped:
+      return 0
+    return self.actual_pitch
+
+  def resetPosition(self):
+    self.transport_clock.reset(None, 0)
+    self.position = None
+    self.position_timestamp = self.transport_clock.timestamp
+
+  def applyPositionMeasurement(self, measured_position, play_state, source, detail):
+    rate = self.getTransportRate(play_state)
+    force_discontinuity = abs(self.actual_pitch) > PITCH_DISCONTINUITY_THRESHOLD
+    predicted, measured, correction, reset = self.transport_clock.applyMeasurement(measured_position, rate, force_discontinuity)
+    self.position = self.transport_clock.position
+    self.position_timestamp = self.transport_clock.timestamp
+    if predicted is not None and measured is not None and play_state not in PlayStateStopped:
+      correction = measured - predicted
+      logging.debug(
+        "Player %d %s position %s %.1f ms (predicted %.3f, measured %.3f, applied %.3f, %s, pitch %.5f)",
+        self.player_number,
+        source,
+        "discontinuity" if reset else "correction",
+        correction * 1000,
+        predicted,
+        measured,
+        self.position,
+        detail,
+        self.actual_pitch)
     return self.position
 
   def updateTtl(self):
