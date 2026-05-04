@@ -47,12 +47,7 @@ class GLWaveformWidget(QOpenGLWidget):
     self.timerId = self.startTimer(self.update_interval_ms)
 
   def changeAutoUpdate(self, autoUpdate):
-    if autoUpdate != self.autoUpdate:
-      self.autoUpdate = autoUpdate
-      if not autoUpdate:
-        self.timerId = self.startTimer(self.update_interval_ms)
-      else:
-        self.killTimer(self.timerId)
+    self.autoUpdate = autoUpdate
 
   def minimumSizeHint(self):
     return QSize(400, 75)
@@ -64,6 +59,7 @@ class GLWaveformWidget(QOpenGLWidget):
     with self.data_lock:
       self.waveform_data = None
       self.beatgrid_data = None
+      self.loop = None
       if self.lists is not None:
         self.clearLists = True
         self.update()
@@ -80,6 +76,8 @@ class GLWaveformWidget(QOpenGLWidget):
       self.update()
 
   def setLoop(self, loop: tuple[float, float]):
+    if loop is not None and (len(loop) != 2 or loop[0] is None or loop[1] is None or loop[1] <= loop[0]):
+      loop = None
     if self.loop != loop:
       self.loop = loop
       self.update()
@@ -92,28 +90,24 @@ class GLWaveformWidget(QOpenGLWidget):
         pitch = 0
       self.pitch = pitch
       if round(self.time_offset * 1000) != round(position * 1000):
-        if self.autoUpdate:
+        #logging.debug("time offset diff %.6f", position-self.time_offset)
+        offset = abs(position - self.time_offset)
+        if state in PlayStatePlaying and offset < 0.05: # ignore negligible offset
+          return
+        
+        if state in PlayStatePlaying and offset < 0.1: # small enough to compensate by temporary pitch modification
+          if position > self.time_offset:
+            #logging.debug("increasing pitch to catch up")
+            self.pitch += 0.01
+          else:
+            #logging.debug("decreasing pitch to fall behind")
+            self.pitch -= 0.01
+        else: # too large to compensate or non-monotonous -> direct assignment
+          #logging.debug("offset %.6f, direct assignment", offset) 
           self.time_offset = position
           self.update()
-        else:
-          #logging.debug("time offset diff %.6f", position-self.time_offset)
-          offset = abs(position - self.time_offset)
-          if state in PlayStatePlaying and offset < 0.05: # ignore negligible offset
-            return
-          
-          if state in PlayStatePlaying and offset < 0.1: # small enough to compensate by temporary pitch modification
-            if position > self.time_offset:
-              #logging.debug("increasing pitch to catch up")
-              self.pitch += 0.01
-            else:
-              #logging.debug("decreasing pitch to fall behind")
-              self.pitch -= 0.01
-          else: # too large to compensate or non-monotonous -> direct assignment
-            #logging.debug("offset %.6f, direct assignment", offset) 
-            self.time_offset = position
-            self.update()
     else:
-      self.offset = 0
+      self.time_offset = 0
       self.pitch = 0
 
   def wheelEvent(self, event):

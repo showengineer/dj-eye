@@ -29,6 +29,7 @@ class PreviewWaveformWidget(QWidget):
     self.colored_render_blue_only = False
 
   def clear(self):
+    self.loop = None
     self.setData(None)
 
   def setData(self, data, colored=False):
@@ -41,11 +42,15 @@ class PreviewWaveformWidget(QWidget):
     self.redraw_signal.emit()
 
   def setPosition(self, relative):
+    if relative is not None:
+      relative = min(1, max(0, relative))
     if relative != self.position:
       self.position = relative
       self.redraw_signal.emit()
 
   def setLoop(self, loop: tuple[float, float]):
+    if loop is not None and (len(loop) != 2 or loop[0] is None or loop[1] is None or loop[1] <= loop[0]):
+      loop = None
     if self.loop != loop:
       self.loop = loop
       self.redraw_signal.emit()

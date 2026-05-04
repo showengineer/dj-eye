@@ -147,6 +147,7 @@ class ClientList:
       new_position = beat_packet.content.playhead / 1000
       if c.position != new_position:
         c.position = new_position
+        c.position_timestamp = time.time()
         client_changed = True
     if self.client_change_callback and client_changed:
       self.client_change_callback(c.player_number)
@@ -356,7 +357,7 @@ class Client:
 
   # calculate the current position by linear interpolation
   def updatePositionByPitch(self):
-    if not self.position or self.actual_pitch == 0:
+    if self.position is None or self.actual_pitch == 0:
       return
     pitch = self.actual_pitch
     if self.play_state in ["cued"]:

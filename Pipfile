@@ -1,0 +1,16 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+pyqt5-sip = "==12.17.0"
+construct = "*"
+pyqt5 = "*"
+pyopengl = "*"
+netifaces = "*"
+
+[dev-packages]
+
+[requires]
+python_version = "3.13"

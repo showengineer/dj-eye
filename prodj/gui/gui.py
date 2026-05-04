@@ -1,6 +1,7 @@
 import sys
 import logging
 import math
+import time
 from threading import Lock
 from PyQt5.QtWidgets import QFrame, QGridLayout, QLabel, QMenu, QPushButton, QSizePolicy, QHBoxLayout, QVBoxLayout, QWidget
 from PyQt5.QtGui import QColor, QPainter, QPixmap
@@ -9,6 +10,7 @@ from PyQt5.QtCore import pyqtSignal, Qt, QSize
 from .gui_browser import Browser, printableField
 from .waveform_gl import GLWaveformWidget
 from .preview_waveform_qt import PreviewWaveformWidget
+from prodj.network.packets import PlayStateStopped
 
 class ClickableLabel(QLabel):
   clicked = pyqtSignal()
@@ -114,10 +116,12 @@ class PlayerWidget(QFrame):
     self.time = ClickableLabel(self)
     self.time.setStyleSheet("QLabel { color: white; font: 32px; qproperty-alignment: AlignRight; }")
     self.time.setMaximumHeight(32)
+    self.time.setMinimumWidth(self.time.fontMetrics().horizontalAdvance("-00:00.000"))
     self.total_time_label = QLabel("TOTAL", self)
     self.total_time = QLabel(self)
     self.total_time.setStyleSheet("QLabel { color: white; font: 32px; qproperty-alignment: AlignRight; }")
     self.total_time.setMaximumHeight(32)
+    self.total_time.setMinimumWidth(self.total_time.fontMetrics().horizontalAdvance("00:00.000"))
     self.beat_bar = BeatBarWidget(self)
 
     time_layout = QGridLayout()
@@ -195,12 +199,19 @@ class PlayerWidget(QFrame):
 
     layout.setColumnStretch(1, 2)
 
+    self.time_position = None
+    self.time_position_timestamp = None
+    self.time_pitch = 0
+    self.time_total = None
+    self.time_play_state = "no_track"
+    self.time_update_interval_ms = 25
+    self.startTimer(self.time_update_interval_ms)
     self.reset()
 
   def unload(self):
     self.setMetadata("Not loaded", "", "")
     self.setArtwork(None)
-    self.setTime(None)
+    self.setPlaybackTime(None)
     self.setTotalTime(None)
     self.beat_bar.setBeat(0)
     self.waveform.clear()
@@ -252,19 +263,51 @@ class PlayerWidget(QFrame):
       p.loadFromData(data)
       self.labels["artwork"].setPixmap(p)
 
+  def formatTime(self, seconds):
+    total_ms = max(0, int(round(seconds * 1000)))
+    minutes = total_ms // 60000
+    seconds = (total_ms % 60000) // 1000
+    milliseconds = total_ms % 1000
+    return "{:02d}:{:02d}.{:03d}".format(minutes, seconds, milliseconds)
+
+  def currentPlaybackPosition(self):
+    if self.time_position is None:
+      return None
+    if self.time_pitch == 0 or self.time_position_timestamp is None:
+      return self.time_position
+    return self.time_position + self.time_pitch * (time.time() - self.time_position_timestamp)
+
+  def setPlaybackTime(self, seconds, total=None, pitch=1, state="playing"):
+    self.time_position = seconds
+    self.time_position_timestamp = time.time()
+    self.time_total = total
+    self.time_play_state = state
+    self.time_pitch = 0 if seconds is None or pitch is None or state in PlayStateStopped else pitch
+    self.updatePlaybackTime()
+
+  def updatePlaybackTime(self):
+    seconds = self.currentPlaybackPosition()
+    self.setTime(seconds, self.time_total)
+    if seconds is not None and self.time_total is not None and self.time_total > 0:
+      self.preview_waveform.setPosition(seconds / self.time_total)
+
   def setTime(self, seconds, total=None):
     if seconds is not None:
       if total is not None and self.time_mode_remain:
         seconds = total-seconds if total > seconds else 0
-      self.time.setText("{}{:02d}:{:02d}".format("" if self.time_mode_remain==False else "-", int(seconds//60), int(seconds)%60))
+      self.time.setText("{}{}".format("" if self.time_mode_remain==False else "-", self.formatTime(seconds)))
     else:
-      self.time.setText("00:00")
+      self.time.setText("00:00.000")
 
   def setTotalTime(self, seconds):
     if seconds is not None:
-      self.total_time.setText("{:02d}:{:02d}".format(int(seconds//60), int(seconds)%60))
+      self.total_time.setText(self.formatTime(seconds))
     else:
-      self.total_time.setText("00:00")
+      self.total_time.setText("00:00.000")
+
+  def timerEvent(self, event):
+    if self.time_pitch != 0:
+      self.updatePlaybackTime()
 
   def setPlayState(self, state):
     self.labels["play_state"].setText(printableField(state))
@@ -279,6 +322,7 @@ class PlayerWidget(QFrame):
     self.time_mode_remain = time_mode_remain
     self.elapsed_label.setEnabled(not self.time_mode_remain)
     self.remain_label.setEnabled(self.time_mode_remain)
+    self.updatePlaybackTime()
 
   def openBrowseDialog(self):
     if self.browse_dialog is None:
@@ -444,14 +488,17 @@ class Gui(QWidget):
     player.setOnAir(c.on_air)
     player.setSlotInfo(c.loaded_player_number, c.loaded_slot)
     if c.metadata is not None and "duration" in c.metadata:
-      player.setTime(c.position, c.metadata["duration"])
-      player.setTotalTime(c.metadata["duration"])
-      if c.position is not None:
-        player.preview_waveform.setPosition(c.position / c.metadata["duration"])
-        player.preview_waveform.setLoop((c.loop_start / c.metadata["duration"], c.loop_end / c.metadata["duration"]))
+      duration = c.metadata["duration"]
+      player.setPlaybackTime(c.position, duration, c.actual_pitch, c.play_state)
+      player.setTotalTime(duration)
+      if c.loop_start is not None and c.loop_end is not None and duration > 0:
+        player.preview_waveform.setLoop((c.loop_start / duration, c.loop_end / duration))
+      else:
+        player.preview_waveform.setLoop(None)
     else:
-      player.setTime(c.position, None)
+      player.setPlaybackTime(c.position, None, c.actual_pitch, c.play_state)
       player.setTotalTime(None)
+      player.preview_waveform.setLoop(None)
     if len(c.fw) > 0:
       player.setPlayerInfo(c.model, c.ip_addr, c.fw)
 
