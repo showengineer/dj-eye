@@ -99,10 +99,14 @@ class ClientList:
     c = self.getClient(player_number)
     identifier = (c.loaded_player_number, c.loaded_slot, c.track_id)
     measured_position = None
+    raw_beat_count = new_beat_count
+    force_discontinuity = False
     if identifier in self.prodj.data.beatgrid_store:
       if new_beat_count > 0:
         if (c.play_state == "cued" and new_play_state == "cueing") or (c.play_state == "playing" and new_play_state == "paused") or (c.play_state == "paused" and new_play_state == "playing"):
           return # ignore absolute position when switching from cued to cueing
+        if c.beat_count is not None and raw_beat_count != 0 and abs(raw_beat_count - c.beat_count) > 2:
+          force_discontinuity = True
         if new_play_state != "cued": # when releasing cue scratch, the beat count is still +1
           new_beat_count -= 1
         beatgrid = self.prodj.data.beatgrid_store[identifier]
@@ -110,7 +114,7 @@ class ClientList:
           measured_position = beatgrid[new_beat_count]["time"] / 1000
       else:
         measured_position = 0
-    c.applyPositionMeasurement(measured_position, new_play_state, "beatgrid", "beat {}".format(new_beat_count))
+    c.applyPositionMeasurement(measured_position, new_play_state, "beatgrid", "beat {}".format(new_beat_count), force_discontinuity)
 
   def logPlayedTrackCallback(self, request, source_player_number, slot, item_id, reply):
     if request != "metadata" or reply is None or len(reply) == 0:
@@ -424,9 +428,9 @@ class Client:
     self.position = None
     self.position_timestamp = self.transport_clock.timestamp
 
-  def applyPositionMeasurement(self, measured_position, play_state, source, detail):
+  def applyPositionMeasurement(self, measured_position, play_state, source, detail, force_discontinuity=False):
     rate = self.getTransportRate(play_state)
-    force_discontinuity = abs(self.actual_pitch) > PITCH_DISCONTINUITY_THRESHOLD
+    force_discontinuity = force_discontinuity or abs(self.actual_pitch) > PITCH_DISCONTINUITY_THRESHOLD
     predicted, measured, correction, reset = self.transport_clock.applyMeasurement(measured_position, rate, force_discontinuity)
     self.position = self.transport_clock.position
     self.position_timestamp = self.transport_clock.timestamp
