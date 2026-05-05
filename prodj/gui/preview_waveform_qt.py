@@ -76,7 +76,7 @@ class PreviewWaveformWidget(QWidget):
         if self.loop:
           start_px = int(self.loop[0] * scaled_pixmap.width())
           end_px = int(self.loop[1] * scaled_pixmap.width())
-          painter.fillRect(start_px, self.top_offset, end_px - start_px, scaled_pixmap.height(), QColor(255, 255, 0, 70))
+          painter.fillRect(start_px, self.top_offset, end_px - start_px, scaled_pixmap.height(), QColor(255, 115, 0, 80))
         # draw position marker
         height = scaled_pixmap.height() + self.top_offset
         marker_position = int(self.position * scaled_pixmap.width())
