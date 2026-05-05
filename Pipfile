@@ -9,6 +9,8 @@ construct = "*"
 pyqt5 = "*"
 pyopengl = "*"
 netifaces = "*"
+numpy = "*"
+scipy = "*"
 
 [dev-packages]
 

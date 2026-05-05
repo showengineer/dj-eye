@@ -292,7 +292,6 @@ class GLWaveformWidget(QOpenGLWidget):
     start, end = self.loop
     gl.glPushAttrib(gl.GL_ALL_ATTRIB_BITS)
     gl.glEnable(gl.GL_BLEND)
-    gl.glDisable(gl.GL_DEPTH_TEST)
     gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA)
     gl.glColor4f(1.0, 0.45, 0.0, 0.28)
     gl.glBegin(gl.GL_QUADS)
