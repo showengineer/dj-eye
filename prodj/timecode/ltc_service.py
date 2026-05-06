@@ -37,6 +37,7 @@ class LTCService:
     self.producer_blocksize = max(self.output_config.blocksize, 512)
     self.producer_thread = None
     self.running = False
+    self.silent = True
     self.last_producer_log = 0
     self.clock_source = ClockSource(
       self.get_transport_frame_position,
@@ -74,10 +75,13 @@ class LTCService:
 
   def produce_audio_once(self):
     if self.clock_source.get_transport_rate() <= 0:
+      self.silent = True
       self.generator.render(self.producer_blocksize, self.sample_rate)
       self.buffer.clear()
+      self.buffer.consume_counters()
       return False
 
+    self.silent = False
     queued_frames = self.buffer.available_read()
     if queued_frames >= self.target_buffer_frames:
       return False
@@ -117,6 +121,8 @@ class LTCService:
     underruns, overruns = self.buffer.consume_counters()
     status_count = self.output.consume_status_count()
     queued_ms = self.buffer.available_read() / self.sample_rate * 1000
+    if self.silent:
+      underruns = 0
     if underruns or overruns or status_count:
       logging.warning(
         "LTC buffer status: queued %.1f ms, underruns %d, overruns %d, audio status flags %d",
@@ -138,6 +144,7 @@ class LTCService:
       self.target_buffer_ms,
     )
     self.running = True
+    self.silent = True
     self.prefill_buffer()
     self.output.start()
     self.producer_thread = threading.Thread(target=self.producer_loop, name="LTCProducer", daemon=True)
@@ -150,3 +157,4 @@ class LTCService:
       self.producer_thread = None
     self.output.stop()
     self.buffer.clear()
+    self.silent = True
