@@ -1,4 +1,5 @@
 import logging
+from threading import Lock
 from dataclasses import dataclass
 
 import numpy as np
@@ -130,6 +131,70 @@ def route_mono_to_output(audio, frames, channels, output_channel=0):
   return out
 
 
+class MonoRingBuffer:
+  def __init__(self, capacity_frames):
+    self.capacity = capacity_frames
+    self.buffer = np.zeros(capacity_frames, dtype=np.float32)
+    self.read_pos = 0
+    self.write_pos = 0
+    self.size = 0
+    self.underruns = 0
+    self.overruns = 0
+    self.lock = Lock()
+
+  def available_read(self):
+    with self.lock:
+      return self.size
+
+  def available_write(self):
+    with self.lock:
+      return self.capacity - self.size
+
+  def clear(self):
+    with self.lock:
+      self.read_pos = 0
+      self.write_pos = 0
+      self.size = 0
+
+  def write(self, audio):
+    audio = np.asarray(audio, dtype=np.float32)
+    written = 0
+    with self.lock:
+      count = min(len(audio), self.capacity - self.size)
+      if count < len(audio):
+        self.overruns += 1
+      while written < count:
+        chunk = min(count - written, self.capacity - self.write_pos)
+        self.buffer[self.write_pos:self.write_pos + chunk] = audio[written:written + chunk]
+        self.write_pos = (self.write_pos + chunk) % self.capacity
+        self.size += chunk
+        written += chunk
+    return written
+
+  def read(self, frames):
+    output = np.zeros(frames, dtype=np.float32)
+    read = 0
+    with self.lock:
+      count = min(frames, self.size)
+      if count < frames:
+        self.underruns += 1
+      while read < count:
+        chunk = min(count - read, self.capacity - self.read_pos)
+        output[read:read + chunk] = self.buffer[self.read_pos:self.read_pos + chunk]
+        self.read_pos = (self.read_pos + chunk) % self.capacity
+        self.size -= chunk
+        read += chunk
+    return output
+
+  def consume_counters(self):
+    with self.lock:
+      underruns = self.underruns
+      overruns = self.overruns
+      self.underruns = 0
+      self.overruns = 0
+    return underruns, overruns
+
+
 class SoundDeviceOutput:
   def __init__(self, callback, config=None, output_channel=0):
     self.sd = import_sounddevice()
@@ -137,6 +202,7 @@ class SoundDeviceOutput:
     self.config = config or OutputConfig()
     self.output_channel = output_channel
     self.stream = None
+    self.status_count = 0
 
   def start(self):
     if self.stream is not None:
@@ -177,12 +243,17 @@ class SoundDeviceOutput:
 
   def _callback(self, outdata, frames, device_info, status):
     if status:
-      logging.warning("sounddevice output status: %s", status)
+      self.status_count += 1
     audio = self.callback(frames, self.config.sample_rate, device_info)
     audio = np.asarray(audio, dtype=np.float32)
     outdata.fill(0)
     count = min(frames, len(audio))
     outdata[:count, self.output_channel] = audio[:count]
+
+  def consume_status_count(self):
+    status_count = self.status_count
+    self.status_count = 0
+    return status_count
 
   def __enter__(self):
     self.start()

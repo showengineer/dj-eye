@@ -43,6 +43,7 @@ parser.add_argument('--chunk-size', dest='chunk_size', help='Chunk size of NFS d
 parser.add_argument('-f', '--fullscreen', action='store_true', help='Start with fullscreen window')
 parser.add_argument('-l', '--layout', dest='layout', help='Display layout, values are xy (default), yx, xx, yy, row or column', type=arg_layout, default="xy")
 parser.add_argument('--player-slots', type=arg_player_slots, default=4, help='Show a fixed number of player sections, either 4 or 6')
+parser.add_argument('--vcdj-player', type=int, default=None, help='Virtual CDJ player number, defaults to player-slots + 1')
 parser.add_argument('--list-audio-devices', action='store_true', help='List audio output devices and exit')
 parser.add_argument('--ltc-player', type=int, default=None, help='Generate LTC from this player number')
 parser.add_argument('--ltc-device', type=int, default=None, help='Audio output device index for LTC')
@@ -52,6 +53,7 @@ parser.add_argument('--ltc-sample-rate', type=int, default=48000, help='LTC audi
 parser.add_argument('--ltc-blocksize', type=int, default=512, help='LTC audio callback block size')
 parser.add_argument('--ltc-volume', type=float, default=0.8, help='LTC output volume')
 parser.add_argument('--ltc-compensation-ms', type=float, default=0, help='Generate LTC this many milliseconds ahead to compensate fixed output latency')
+parser.add_argument('--ltc-buffer-ms', type=float, default=120, help='Target producer buffer for LTC audio')
 
 args = parser.parse_args()
 
@@ -93,7 +95,8 @@ prodj.set_client_keepalive_callback(gui.keepalive_callback)
 prodj.set_client_change_callback(gui.client_change_callback)
 prodj.set_media_change_callback(gui.media_callback)
 prodj.start()
-prodj.vcdj_set_player_number(5)
+vcdj_player = args.vcdj_player if args.vcdj_player is not None else args.player_slots + 1
+prodj.vcdj_set_player_number(vcdj_player)
 prodj.vcdj_enable()
 
 ltc = None
@@ -112,6 +115,7 @@ if args.ltc_player is not None:
     fps=args.ltc_fps,
     volume=args.ltc_volume,
     latency_compensation_ms=args.ltc_compensation_ms,
+    target_buffer_ms=args.ltc_buffer_ms,
   )
   ltc.start()
 

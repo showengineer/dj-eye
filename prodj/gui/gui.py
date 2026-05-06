@@ -143,10 +143,9 @@ class PlayerWidget(QFrame):
     self.waveform = GLWaveformWidget(self)
     self.waveform.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
     self.preview_waveform = PreviewWaveformWidget(self)
-    qsp = QSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
+    qsp = QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
     qsp.setHeightForWidth(True)
     self.preview_waveform.setSizePolicy(qsp)
-    self.preview_waveform.setMaximumHeight(50)
 
     # BPM / Pitch / Master display
     bpm_label = QLabel("BPM", self)

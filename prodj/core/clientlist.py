@@ -9,7 +9,7 @@ POSITION_DISCONTINUITY_THRESHOLD = 0.250
 PITCH_DISCONTINUITY_THRESHOLD = 1.500
 POSITION_CORRECTION_GAIN = 0.150
 UNITY_PITCH_DEADBAND = 0.0005
-UNITY_PITCH_CORRECTION_THRESHOLD = 0.250
+UNITY_PITCH_CORRECTION_GAIN = 0.030
 
 class TransportClock:
   def __init__(self):
@@ -35,7 +35,7 @@ class TransportClock:
     self.timestamp = now
     return self.position
 
-  def applyMeasurement(self, measured_position, rate, force_discontinuity=False, ignore_correction_threshold=None):
+  def applyMeasurement(self, measured_position, rate, force_discontinuity=False, correction_gain=POSITION_CORRECTION_GAIN):
     predicted_position = self.update()
     if measured_position is None:
       self.reset(None, 0)
@@ -47,11 +47,7 @@ class TransportClock:
     if predicted_position is None or is_discontinuity:
       self.reset(measured_position, rate)
       return predicted_position, measured_position, None, True, False
-    if ignore_correction_threshold is not None and abs(correction) < ignore_correction_threshold:
-      self.position = predicted_position
-      self.rate = rate
-      return predicted_position, measured_position, correction, False, True
-    self.position = predicted_position + correction * POSITION_CORRECTION_GAIN
+    self.position = predicted_position + correction * correction_gain
     self.timestamp = time.monotonic()
     self.rate = rate
     return predicted_position, measured_position, correction, False, False
@@ -109,7 +105,11 @@ class ClientList:
     force_discontinuity = False
     if identifier in self.prodj.data.beatgrid_store:
       if new_beat_count > 0:
-        if (c.play_state == "cued" and new_play_state == "cueing") or (c.play_state == "playing" and new_play_state == "paused") or (c.play_state == "paused" and new_play_state == "playing"):
+        play_start = c.play_state in PlayStateStopped and new_play_state not in PlayStateStopped
+        if play_start:
+          force_discontinuity = True
+          c.force_next_position_discontinuity = False
+        if (c.play_state == "cued" and new_play_state == "cueing") or (c.play_state == "playing" and new_play_state == "paused"):
           return # ignore absolute position when switching from cued to cueing
         if c.beat_count is not None and raw_beat_count != 0 and abs(raw_beat_count - c.beat_count) > 2:
           force_discontinuity = True
@@ -201,7 +201,8 @@ class ClientList:
       
       new_position = beat_packet.content.playhead / 1000
       old_position = c.position
-      c.applyPositionMeasurement(new_position, c.play_state, "absolute", "packet")
+      c.applyPositionMeasurement(new_position, c.play_state, "absolute", "packet", c.force_next_position_discontinuity)
+      c.force_next_position_discontinuity = False
       if c.position != old_position:
         client_changed = True
     if self.client_change_callback and client_changed:
@@ -302,6 +303,9 @@ class ClientList:
       if c.beat_count != new_beat_count:
         c.beat_count = new_beat_count
         client_changed = True
+
+      if c.play_state in PlayStateStopped and new_play_state not in PlayStateStopped:
+        c.force_next_position_discontinuity = True
 
       if c.play_state != new_play_state:
         c.play_state = new_play_state
@@ -411,6 +415,7 @@ class Client:
     self.metadata = None
     self.status_packet_received = False # ignore play state from beat packets
     self.supports_absolute_position_packets = False
+    self.force_next_position_discontinuity = False
     self.ttl = time.time()
 
   # calculate the current position by linear interpolation
@@ -446,14 +451,14 @@ class Client:
   def applyPositionMeasurement(self, measured_position, play_state, source, detail, force_discontinuity=False):
     rate = self.getTransportRate(play_state)
     force_discontinuity = force_discontinuity or abs(self.actual_pitch) > PITCH_DISCONTINUITY_THRESHOLD
-    ignore_correction_threshold = None
+    correction_gain = POSITION_CORRECTION_GAIN
     if play_state not in PlayStateStopped and abs(self.actual_pitch - 1.0) < UNITY_PITCH_DEADBAND:
-      ignore_correction_threshold = UNITY_PITCH_CORRECTION_THRESHOLD
+      correction_gain = UNITY_PITCH_CORRECTION_GAIN
     predicted, measured, correction, reset, ignored = self.transport_clock.applyMeasurement(
       measured_position,
       rate,
       force_discontinuity,
-      ignore_correction_threshold,
+      correction_gain,
     )
     self.position = self.transport_clock.position
     self.position_timestamp = self.transport_clock.timestamp
