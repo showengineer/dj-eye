@@ -360,7 +360,7 @@ class Gui(QWidget):
   keepalive_signal = pyqtSignal(int)
   client_change_signal = pyqtSignal(int)
 
-  def __init__(self, prodj, show_color_waveform=False, show_color_preview=False, arg_layout="xy"):
+  def __init__(self, prodj, show_color_waveform=False, show_color_preview=False, arg_layout="xy", player_slots=4):
     super().__init__()
     self.prodj = prodj
     self.setWindowTitle('Pioneer ProDJ Link Monitor')
@@ -372,6 +372,7 @@ class Gui(QWidget):
 
     self.show_color_waveform = show_color_waveform
     self.show_color_preview = show_color_preview
+    self.player_slots = player_slots
 
     self.players = {}
     self.layout = QGridLayout(self)
@@ -383,34 +384,30 @@ class Gui(QWidget):
     # "column" = = player 1 + 2 + 3 + 4 in a single column
     self.layout_mode = arg_layout
     self.layouts = {
-      "xy": [(0,0), (0,1), (1,0), (1,1)],
-      "yx": [(0,0), (1,0), (0,1), (1,1)],
-      "xx": [(0,0), (1,0), (1,1), (0,1)],
-      "yy": [(1,0), (0,0), (0,1), (1,1)],
-      "row": [(0,0), (0,1), (0,2), (1,3)],
-      "column": [(0,0), (1,0), (2,0), (3,0)]
+      "xy": [(0,0), (0,1), (1,0), (1,1), (2,0), (2,1)],
+      "yx": [(0,0), (1,0), (0,1), (1,1), (0,2), (1,2)],
+      "xx": [(0,0), (1,0), (1,1), (0,1), (2,0), (2,1)],
+      "yy": [(1,0), (0,0), (0,1), (1,1), (2,0), (2,1)],
+      "row": [(0,0), (0,1), (0,2), (0,3), (0,4), (0,5)],
+      "column": [(0,0), (1,0), (2,0), (3,0), (4,0), (5,0)]
     }
-    self.create_player(0)
+    self.create_fixed_players()
 
     self.show()
 
   def get_layout_coordinates(self, widget_number):
-    if widget_number == 0:
-      return 0,0
-    if widget_number > 4:
+    if widget_number < 1 or widget_number > self.player_slots:
       raise Exception("Unhandled widget number {}".format(widget_number))
     if not self.layout_mode in self.layouts:
       raise Exception("Unknown Gui layout mode {}".format(self.layout_mode))
     return self.layouts[self.layout_mode][widget_number-1]
 
   def update_player_layout(self):
-    n = 1
     for player in sorted(self.players.values(), key=lambda x: x.player_number):
-      x,y = self.get_layout_coordinates(n)
+      x,y = self.get_layout_coordinates(player.player_number)
       if self.layout.itemAtPosition(x, y) != player:
         self.layout.removeWidget(player)
         self.layout.addWidget(player, x, y)
-      n = n+1
 
   def connect_linked_player_controls(self, player_number):
     for pn, p in self.players.items():
@@ -420,19 +417,18 @@ class Gui(QWidget):
         self.players[player_number].time_mode_remain_changed_signal.connect(p.setTimeMode, type = Qt.UniqueConnection | Qt.AutoConnection)
         p.time_mode_remain_changed_signal.connect(self.players[player_number].setTimeMode, type = Qt.UniqueConnection | Qt.AutoConnection)
 
+  def create_fixed_players(self):
+    for player_number in range(1, self.player_slots + 1):
+      self.create_player(player_number)
+
   # return widget of a player or create it if it does not exist yet
   def create_player(self, player_number):
     if player_number in self.players:
       return self.players[player_number]
-    if player_number not in range(0,5):
+    if player_number not in range(1, self.player_slots + 1):
       return None
-    if len(self.players) == 1 and 0 in self.players:
-      logging.debug("reassigning default player 0 to player %d", player_number)
-      self.players[0].setPlayerNumber(player_number)
-      self.players = {player_number: self.players[0]}
-    else:
-      logging.info("Creating player {}".format(player_number))
-      self.players[player_number] = PlayerWidget(player_number, self)
+    logging.info("Creating player {}".format(player_number))
+    self.players[player_number] = PlayerWidget(player_number, self)
     self.connect_linked_player_controls(player_number)
     self.players[player_number].show()
     self.update_player_layout()
@@ -442,17 +438,8 @@ class Gui(QWidget):
     if not player_number in self.players:
       return
     player = self.players[player_number]
-    if len(self.players) == 1:
-      logging.info("All players gone, resetting last player to 0")
-      self.players = {0: player}
-      self.players[0].setPlayerNumber(0)
-      self.players[0].reset()
-    else:
-      player.hide()
-      player.deleteLater()
-      del self.players[player_number]
-    self.update_player_layout()
-    logging.info("Removed player {}".format(player_number))
+    player.reset()
+    logging.info("Reset player {}".format(player_number))
 
   # has to be called using a signal, otherwise windows are created standalone
   def keepalive_callback(self, player_number):

@@ -9,6 +9,8 @@ import argparse
 
 from prodj.core.prodj import ProDj
 from prodj.gui.gui import Gui
+from prodj.audio.output import OutputConfig, format_output_devices
+from prodj.timecode.ltc_service import LTCService
 
 def arg_size(value):
   number = int(value)
@@ -20,6 +22,12 @@ def arg_layout(value):
   if value not in ["xy", "yx", "xx", "yy", "row", "column"]:
     raise argparse.ArgumentTypeError("%s is not a value from the list xy, yx, xx, yy, row or column".format(value))
   return value
+
+def arg_player_slots(value):
+  number = int(value)
+  if number not in [4, 6]:
+    raise argparse.ArgumentTypeError("%s is not 4 or 6".format(value))
+  return number
 
 parser = argparse.ArgumentParser(description='Python ProDJ Link')
 provider_group = parser.add_mutually_exclusive_group()
@@ -34,10 +42,24 @@ parser.add_argument('--dump-packets', action='store_const', dest='loglevel', con
 parser.add_argument('--chunk-size', dest='chunk_size', help='Chunk size of NFS downloads (high values may be faster but fail on some networks)', type=arg_size, default=None)
 parser.add_argument('-f', '--fullscreen', action='store_true', help='Start with fullscreen window')
 parser.add_argument('-l', '--layout', dest='layout', help='Display layout, values are xy (default), yx, xx, yy, row or column', type=arg_layout, default="xy")
+parser.add_argument('--player-slots', type=arg_player_slots, default=4, help='Show a fixed number of player sections, either 4 or 6')
+parser.add_argument('--list-audio-devices', action='store_true', help='List audio output devices and exit')
+parser.add_argument('--ltc-player', type=int, default=None, help='Generate LTC from this player number')
+parser.add_argument('--ltc-device', type=int, default=None, help='Audio output device index for LTC')
+parser.add_argument('--ltc-channel', type=int, default=0, help='Zero-based output channel for LTC')
+parser.add_argument('--ltc-fps', type=float, default=25, help='LTC frame rate')
+parser.add_argument('--ltc-sample-rate', type=int, default=48000, help='LTC audio sample rate')
+parser.add_argument('--ltc-blocksize', type=int, default=512, help='LTC audio callback block size')
+parser.add_argument('--ltc-volume', type=float, default=0.8, help='LTC output volume')
+parser.add_argument('--ltc-compensation-ms', type=float, default=0, help='Generate LTC this many milliseconds ahead to compensate fixed output latency')
 
 args = parser.parse_args()
 
 logging.basicConfig(level=args.loglevel, format='%(levelname)-7s %(module)s: %(message)s')
+
+if args.list_audio_devices:
+  print(format_output_devices())
+  raise SystemExit(0)
 
 prodj = ProDj()
 prodj.data.pdb_enabled = args.enable_pdb
@@ -45,7 +67,13 @@ prodj.data.dbc_enabled = args.enable_dbc
 if args.chunk_size is not None:
   prodj.nfs.setDownloadChunkSize(args.chunk_size)
 app = QApplication([])
-gui = Gui(prodj, show_color_waveform=args.color_waveform or args.color, show_color_preview=args.color_preview or args.color, arg_layout=args.layout)
+gui = Gui(
+  prodj,
+  show_color_waveform=args.color_waveform or args.color,
+  show_color_preview=args.color_preview or args.color,
+  arg_layout=args.layout,
+  player_slots=args.player_slots,
+)
 if args.fullscreen:
   gui.setWindowState(Qt.WindowFullScreen | Qt.WindowMaximized | Qt.WindowActive)
 
@@ -68,6 +96,27 @@ prodj.start()
 prodj.vcdj_set_player_number(5)
 prodj.vcdj_enable()
 
+ltc = None
+if args.ltc_player is not None:
+  ltc_config = OutputConfig(
+    device=args.ltc_device,
+    sample_rate=args.ltc_sample_rate,
+    channels=args.ltc_channel + 1,
+    blocksize=args.ltc_blocksize,
+  )
+  ltc = LTCService(
+    prodj,
+    args.ltc_player,
+    output_config=ltc_config,
+    output_channel=args.ltc_channel,
+    fps=args.ltc_fps,
+    volume=args.ltc_volume,
+    latency_compensation_ms=args.ltc_compensation_ms,
+  )
+  ltc.start()
+
 app.exec()
 logging.info("Shutting down...")
+if ltc is not None:
+  ltc.stop()
 prodj.stop()

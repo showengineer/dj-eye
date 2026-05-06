@@ -8,6 +8,8 @@ from prodj.network.packets_dump import pretty_flags
 POSITION_DISCONTINUITY_THRESHOLD = 0.250
 PITCH_DISCONTINUITY_THRESHOLD = 1.500
 POSITION_CORRECTION_GAIN = 0.150
+UNITY_PITCH_DEADBAND = 0.0005
+UNITY_PITCH_CORRECTION_THRESHOLD = 0.250
 
 class TransportClock:
   def __init__(self):
@@ -33,22 +35,26 @@ class TransportClock:
     self.timestamp = now
     return self.position
 
-  def applyMeasurement(self, measured_position, rate, force_discontinuity=False):
+  def applyMeasurement(self, measured_position, rate, force_discontinuity=False, ignore_correction_threshold=None):
     predicted_position = self.update()
     if measured_position is None:
       self.reset(None, 0)
-      return predicted_position, None, None, False
+      return predicted_position, None, None, False, False
     correction = None if predicted_position is None else measured_position - predicted_position
     is_discontinuity = force_discontinuity or (
       correction is not None and abs(correction) > POSITION_DISCONTINUITY_THRESHOLD
     )
     if predicted_position is None or is_discontinuity:
       self.reset(measured_position, rate)
-      return predicted_position, measured_position, None, True
+      return predicted_position, measured_position, None, True, False
+    if ignore_correction_threshold is not None and abs(correction) < ignore_correction_threshold:
+      self.position = predicted_position
+      self.rate = rate
+      return predicted_position, measured_position, correction, False, True
     self.position = predicted_position + correction * POSITION_CORRECTION_GAIN
     self.timestamp = time.monotonic()
     self.rate = rate
-    return predicted_position, measured_position, correction, False
+    return predicted_position, measured_position, correction, False, False
 
 class ClientList:
   def __init__(self, prodj):
@@ -416,6 +422,15 @@ class Client:
     #logging.debug("Track position inc %f actual_pitch %.6f play_state %s beat %d", self.position, self.actual_pitch, self.play_state, self.beat_count)
     return self.position
 
+  def getTransportPosition(self):
+    return self.updatePositionByPitch()
+
+  def getTransportFramePosition(self, fps):
+    position = self.getTransportPosition()
+    if position is None:
+      return None
+    return position * fps
+
   def getTransportRate(self, play_state=None):
     if play_state is None:
       play_state = self.play_state
@@ -431,7 +446,15 @@ class Client:
   def applyPositionMeasurement(self, measured_position, play_state, source, detail, force_discontinuity=False):
     rate = self.getTransportRate(play_state)
     force_discontinuity = force_discontinuity or abs(self.actual_pitch) > PITCH_DISCONTINUITY_THRESHOLD
-    predicted, measured, correction, reset = self.transport_clock.applyMeasurement(measured_position, rate, force_discontinuity)
+    ignore_correction_threshold = None
+    if play_state not in PlayStateStopped and abs(self.actual_pitch - 1.0) < UNITY_PITCH_DEADBAND:
+      ignore_correction_threshold = UNITY_PITCH_CORRECTION_THRESHOLD
+    predicted, measured, correction, reset, ignored = self.transport_clock.applyMeasurement(
+      measured_position,
+      rate,
+      force_discontinuity,
+      ignore_correction_threshold,
+    )
     self.position = self.transport_clock.position
     self.position_timestamp = self.transport_clock.timestamp
     if predicted is not None and measured is not None and play_state not in PlayStateStopped:
@@ -440,7 +463,7 @@ class Client:
         "Player %d %s position %s %.1f ms (predicted %.3f, measured %.3f, applied %.3f, %s, pitch %.5f)",
         self.player_number,
         source,
-        "discontinuity" if reset else "correction",
+        "discontinuity" if reset else "ignored correction" if ignored else "correction",
         correction * 1000,
         predicted,
         measured,

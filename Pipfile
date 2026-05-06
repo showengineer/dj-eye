@@ -11,6 +11,7 @@ pyopengl = "*"
 netifaces = "*"
 numpy = "*"
 scipy = "*"
+sounddevice = "*"
 
 [dev-packages]
 
