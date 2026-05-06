@@ -3,3 +3,8 @@ stuff
 .idea/
 databases/
 tracks.log
+
+dist/
+build/
+
+*.wav
