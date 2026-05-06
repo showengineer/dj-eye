@@ -19,7 +19,7 @@ class PreviewWaveformWidget(QWidget):
     self.pixmap_height = 34
     self.top_offset = 8
     self.total_height = self.pixmap_height + self.top_offset
-    self.setMinimumSize(self.pixmap_width, self.total_height)
+    self.setMinimumSize(80, self.total_height)
     self.data = None
     self.pixmap = None
     self.pixmap_lock = Lock()
@@ -66,20 +66,22 @@ class PreviewWaveformWidget(QWidget):
     painter.begin(self)
     with self.pixmap_lock:
       if self.pixmap is not None:
-        scaled_pixmap = self.pixmap.scaled(self.size(), Qt.KeepAspectRatio)
-        painter.drawPixmap(0, self.top_offset, scaled_pixmap)
+        target_size = QSize(self.width(), max(1, self.height() - self.top_offset))
+        scaled_pixmap = self.pixmap.scaled(target_size, Qt.IgnoreAspectRatio)
+        left = 0
+        painter.drawPixmap(left, self.top_offset, scaled_pixmap)
         # draw 1px border around preview
         painter.setPen(QColor(255, 255, 255))
         painter.setBrush(Qt.NoBrush)
-        painter.drawRect(0, 0, scaled_pixmap.width(), self.height()) # we use the full height to have a little padding
+        painter.drawRect(left, 0, scaled_pixmap.width(), scaled_pixmap.height() + self.top_offset) # we use the full height to have a little padding
         # draw loop overlay on top of waveform
         if self.loop:
-          start_px = int(self.loop[0] * scaled_pixmap.width())
-          end_px = int(self.loop[1] * scaled_pixmap.width())
+          start_px = left + int(self.loop[0] * scaled_pixmap.width())
+          end_px = left + int(self.loop[1] * scaled_pixmap.width())
           painter.fillRect(start_px, self.top_offset, end_px - start_px, scaled_pixmap.height(), QColor(255, 115, 0, 80))
         # draw position marker
         height = scaled_pixmap.height() + self.top_offset
-        marker_position = int(self.position * scaled_pixmap.width())
+        marker_position = left + int(self.position * scaled_pixmap.width())
         painter.fillRect(marker_position-1, 3, 3, height, Qt.black)
         painter.fillRect(marker_position-3, 3, 7, 7, Qt.black)
         painter.fillRect(marker_position-2, 4, 5, 5, Qt.white)
