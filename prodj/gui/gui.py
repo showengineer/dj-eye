@@ -2,12 +2,14 @@ import sys
 import logging
 import math
 import time
+from pathlib import Path
 from threading import Lock
 from PyQt5.QtWidgets import QFrame, QGridLayout, QLabel, QMenu, QPushButton, QSizePolicy, QHBoxLayout, QVBoxLayout, QWidget
-from PyQt5.QtGui import QColor, QPainter, QPixmap
+from PyQt5.QtGui import QColor, QPainter, QPixmap, QIcon
 from PyQt5.QtCore import pyqtSignal, Qt, QSize
 
 from .gui_browser import Browser, printableField
+from .gui_about import AboutDialog
 from .waveform_gl import GLWaveformWidget
 from .preview_waveform_qt import PreviewWaveformWidget
 from prodj.network.packets import PlayStateStopped
@@ -363,7 +365,8 @@ class Gui(QWidget):
   def __init__(self, prodj, show_color_waveform=False, show_color_preview=False, arg_layout="xy", player_slots=4):
     super().__init__()
     self.prodj = prodj
-    self.setWindowTitle('Pioneer ProDJ Link Monitor')
+    self.setWindowIcon(QIcon("favicon.ico"))
+    self.setWindowTitle('ShowEngineering\'s Dj-Eye v0.91 BETA')
 
     self.setAutoFillBackground(True)
 
@@ -374,9 +377,14 @@ class Gui(QWidget):
     self.show_color_waveform = show_color_waveform
     self.show_color_preview = show_color_preview
     self.player_slots = player_slots
+    self.about_dialog = None
 
     self.players = {}
-    self.layout = QGridLayout(self)
+    self.main_layout = QVBoxLayout(self)
+    self.main_layout.setContentsMargins(6, 6, 6, 6)
+    self.main_layout.setSpacing(6)
+    self.layout = QGridLayout()
+    self.layout.setSpacing(6)
     # "xy" = player 1 + 2 in the first row
     # "yx" = player 1 + 2 in the first column
     # "xx" = player 1 + 4 in the first row
@@ -393,8 +401,48 @@ class Gui(QWidget):
       "column": [(0,0), (1,0), (2,0), (3,0), (4,0), (5,0)]
     }
     self.create_fixed_players()
+    self.create_header()
 
     self.show()
+
+  def create_header(self):
+    header = QFrame(self)
+    header.setObjectName("HeaderFrame")
+    header.setStyleSheet("#HeaderFrame { border-bottom: 1px solid #555; }")
+    header.setFixedHeight(56)
+
+    header_layout = QHBoxLayout(header)
+    header_layout.setContentsMargins(4, 0, 4, 6)
+
+    logo = QLabel(header)
+    logo_path = Path("logo_white.png")
+    logo_pixmap = QPixmap(str(logo_path))
+    if not logo_pixmap.isNull():
+      logo.setPixmap(logo_pixmap.scaledToHeight(44, Qt.SmoothTransformation))
+    logo.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+
+    self.header_menu_button = QPushButton("MENU", header)
+    self.header_menu_button.setFlat(True)
+    self.header_menu_button.setStyleSheet("QPushButton { color: white; font: bold 10px; background-color: black; padding: 4px 8px; border-style: outset; border-radius: 2px; border-width: 1px; border-color: gray; }")
+    self.header_menu = QMenu(self.header_menu_button)
+    self.header_menu.addAction("Settings").setEnabled(False)
+    about_action = self.header_menu.addAction("About")
+    about_action.triggered.connect(self.openAboutDialog)
+    self.header_menu_button.setMenu(self.header_menu)
+
+    header_layout.addWidget(logo)
+    header_layout.addStretch(1)
+    header_layout.addWidget(self.header_menu_button)
+
+    self.main_layout.addWidget(header)
+    self.main_layout.addLayout(self.layout, 1)
+  
+  def openAboutDialog(self):
+    if self.about_dialog is None:
+      self.about_dialog = AboutDialog(self)
+    self.about_dialog.show()
+    self.about_dialog.raise_()
+    self.about_dialog.activateWindow()
 
   def get_layout_coordinates(self, widget_number):
     if widget_number < 1 or widget_number > self.player_slots:
