@@ -42,21 +42,24 @@ class SettingsDialog(QDialog):
     self.output_channel.setValue(settings.output_channel + 1)
 
     self.fps = QComboBox(self)
-    self.fps.addItem("23.976 without drop frames")
-    self.fps.addItem("24")
-    self.fps.addItem("25")
-    self.fps.addItem("29.97 without drop frames")
-    self.fps.addItem("30")
+    self.fps.addItem("23.976 without drop frames", 23.976)
+    self.fps.addItem("24", 24)
+    self.fps.addItem("25", 25)
+    self.fps.addItem("29.97 without drop frames", 29.97)
+    self.fps.addItem("30", 30)
     self.fps.setCurrentIndex(2) # 25 fps default. TODO: Make this last state dependent
 
     fps_index = self.fps.findText(str(settings.fps), Qt.MatchStartsWith)
     if fps_index >= 0:
       self.fps.setCurrentIndex(fps_index)
 
-    self.sample_rate = QSpinBox(self)
-    self.sample_rate.setRange(8000, 384000)
-    self.sample_rate.setSingleStep(1000)
-    self.sample_rate.setValue(settings.sample_rate)
+    self.sample_rate = QComboBox(self)
+    self.sample_rate.addItem("Device default", None)
+    self.sample_rate.addItem("44.1 kHz", 44100)
+    self.sample_rate.addItem("48 kHz", 48000)
+    self.sample_rate.addItem("96 kHz", 96000)
+    self.sample_rate.addItem("192 kHz", 192000)
+
 
     self.blocksize = QSpinBox(self)
     self.blocksize.setRange(64, 8192)
@@ -86,7 +89,7 @@ class SettingsDialog(QDialog):
     form.addRow("Sample rate", self.sample_rate)
     form.addRow("Block size", self.blocksize)
     form.addRow("Volume", self.volume)
-    form.addRow("Compensation ms", self.compensation_ms)
+    form.addRow("LTC compentation ms", self.compensation_ms)
     form.addRow("Buffer ms", self.buffer_ms)
 
     buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, self)
@@ -157,8 +160,8 @@ class SettingsDialog(QDialog):
     return LtcSettings(
       device=self.selectedDevice(),
       output_channel=self.output_channel.value() - 1,
-      fps=float(self.fps.currentText().split()[0]),
-      sample_rate=self.sample_rate.value(),
+      fps=self.fps.currentData(),
+      sample_rate=self.sample_rate.currentData(),
       blocksize=self.blocksize.value(),
       volume=self.volume.value(),
       compensation_ms=self.compensation_ms.value(),

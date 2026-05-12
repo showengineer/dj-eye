@@ -37,7 +37,7 @@ class HostApi:
 @dataclass
 class OutputConfig:
   device: int | None = None
-  sample_rate: int = 48000
+  sample_rate: int | None = 48000
   channels: int = 1
   blocksize: int = 512
   latency: str | float | None = None
