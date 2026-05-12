@@ -70,22 +70,26 @@ class LTCStreamGenerator():
             LTC frames per second. Typical values are 25, 29.97, 30. 
         """
     
-        nominal_half_bit_samples = sample_rate / (fps * 80 * 2)
+        samples_per_frame = int(round(sample_rate / fps))
+        half_bit_count = len(bitstream) * 2
     
         level = start_level
         samples = []
+        half_bit_index = 0
     
         for bit in bitstream:
             # transition aan begin van bit
             level *= -1.0
     
-            n1 = int(round(nominal_half_bit_samples))
+            n1 = int(round((half_bit_index + 1) * samples_per_frame / half_bit_count)) - int(round(half_bit_index * samples_per_frame / half_bit_count))
+            half_bit_index += 1
             samples.extend([level] * n1)
     
             # extra transition halverwege bij een 1
             if bit == 1:
                 level *= -1.0
-            n2 = int(round(nominal_half_bit_samples))
+            n2 = int(round((half_bit_index + 1) * samples_per_frame / half_bit_count)) - int(round(half_bit_index * samples_per_frame / half_bit_count))
+            half_bit_index += 1
     
             samples.extend([level] * n2)
     
