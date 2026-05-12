@@ -221,6 +221,10 @@ class PlayerWidget(QFrame):
     layout.addWidget(self.preview_waveform, 5, 0, 1, 4)
 
     layout.setColumnStretch(1, 2)
+    layout.setColumnMinimumWidth(1, 300)  # title/artist/info
+    layout.setColumnMinimumWidth(2, 200)  # time + menu/LTC controls
+    layout.setColumnStretch(1, 3)
+    layout.setColumnStretch(2, 2)
 
     self.time_position = None
     self.time_position_timestamp = None
@@ -439,6 +443,7 @@ class Gui(QWidget):
     }
     self.create_fixed_players()
     self.create_header()
+    self.create_footer()
 
     self.show()
 
@@ -511,6 +516,22 @@ class Gui(QWidget):
 
     self.main_layout.addWidget(header)
     self.main_layout.addLayout(self.layout, 1)
+
+  def create_footer(self):
+    self.footer_text = QLabel("No audio device opened.", self)
+    self.footer_text.setTextInteractionFlags(Qt.TextSelectableByMouse)
+    self.footer_text.setStyleSheet("""
+      QLabel {
+        color: white;
+        background-color: black;
+        border: 1px solid #555;
+        padding: 3px 6px;
+      }
+    """)
+    self.main_layout.addWidget(self.footer_text)
+
+  def setFooterText(self, text):
+    self.footer_text.setText(text)
 
   def setLtcAvailable(self, available):
     self.ltc_available = available

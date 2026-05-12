@@ -138,7 +138,7 @@ class LTCService:
     if self.running:
       return
     logging.info(
-      "Starting LTC output for player %d at %.3f fps on device %s with %.1f ms compensation, %.1f ms buffer",
+      "Starting LTC output for player %s at %.3f fps on device %s with %.1f ms compensation, %.1f ms buffer",
       self.player_number,
       self.fps,
       self.output_config.device,

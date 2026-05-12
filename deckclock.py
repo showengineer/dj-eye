@@ -10,7 +10,7 @@ import argparse
 from prodj.core.prodj import ProDj
 from prodj.gui.gui import Gui
 from prodj.gui.gui_settings import LtcSettings
-from prodj.audio.output import OutputConfig, format_output_devices
+from prodj.audio.output import OutputConfig, format_output_devices, import_sounddevice
 from prodj.timecode.ltc_service import LTCService
 
 def arg_size(value):
@@ -118,12 +118,31 @@ ltc_state = {
   "player_number": args.ltc_player,
 }
 
+def get_ltc_device_info(settings):
+  sd = import_sounddevice()
+  device_info = sd.query_devices(settings.device, "output")
+  hostapi_info = sd.query_hostapis(device_info["hostapi"])
+  return device_info, hostapi_info
+
+def ltc_hostapi_label(hostapi_name):
+  lower_name = hostapi_name.lower()
+  if "asio" in lower_name:
+    return "ASIO"
+  if "directsound" in lower_name:
+    return "DirectSound"
+  if "wasapi" in lower_name or "wdm" in lower_name:
+    return "WDM"
+  return hostapi_name
+
 def create_ltc_service(settings):
-  if ltc_state["player_number"] is None:
-    return None
+  device_info, _ = get_ltc_device_info(settings)
+  sample_rate = settings.sample_rate
+  if settings.sample_rate is None:
+    sample_rate = int(device_info["default_samplerate"])
+
   ltc_config = OutputConfig(
     device=settings.device,
-    sample_rate=settings.sample_rate,
+    sample_rate=sample_rate,
     channels=settings.output_channel + 1,
     blocksize=settings.blocksize,
   )
@@ -136,6 +155,16 @@ def create_ltc_service(settings):
     volume=settings.volume,
     latency_compensation_ms=settings.compensation_ms,
     target_buffer_ms=settings.buffer_ms,
+  )
+
+def set_ltc_footer_status(service):
+  device_info, hostapi_info = get_ltc_device_info(service.output_config)
+  gui.setFooterText(
+    "{} device {} opened at {:g} kHz".format(
+      ltc_hostapi_label(hostapi_info["name"]),
+      device_info["name"],
+      service.output_config.sample_rate / 1000,
+    )
   )
 
 def apply_ltc_settings(settings):
@@ -160,6 +189,7 @@ def start_ltc_service():
     return
   try:
     ltc_state["service"].start()
+    set_ltc_footer_status(ltc_state["service"])
   except Exception as e:
     logging.exception("Failed to start LTC output: %s", e)
     gui.setLtcEnabled(False)
@@ -170,8 +200,10 @@ def assign_ltc_player(player_number):
     ltc_state["service"].stop()
   if player_number <= 0:
     ltc_state["player_number"] = None
-    ltc_state["service"] = None
+    ltc_state["service"] = create_ltc_service(ltc_state["settings"])
     gui.setLtcAssignedPlayer(None)
+    if was_enabled:
+      start_ltc_service()
     return
   ltc_state["player_number"] = player_number
   gui.setLtcAssignedPlayer(player_number)
@@ -189,6 +221,7 @@ def set_ltc_enabled(enabled):
     start_ltc_service()
   else:
     ltc_state["service"].stop()
+    gui.setFooterText("No audio devices opened")
 
 gui.ltc_settings_signal.connect(apply_ltc_settings)
 gui.ltc_enabled_signal.connect(set_ltc_enabled)
