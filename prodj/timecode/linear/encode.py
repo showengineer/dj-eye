@@ -133,14 +133,14 @@ class LTCStreamGenerator():
         block_ms = frames_requested / sample_rate * 1000
         clock_offset_ms = clock_offset_samples / sample_rate * 1000
         if output_latency_ms is None:
-            logging.info(
+            logging.debug(
                 "LTC latency: clock offset %.1f ms, compensation %.1f ms, audio block %.1f ms",
                 clock_offset_ms,
                 self.latency_compensation_ms,
                 block_ms,
             )
         else:
-            logging.info(
+            logging.debug(
                 "LTC latency: clock offset %.1f ms, compensation %.1f ms, device/DAC %.1f ms, audio block %.1f ms",
                 clock_offset_ms,
                 self.latency_compensation_ms,
