@@ -10,6 +10,7 @@ from PyQt5.QtCore import pyqtSignal, Qt, QSize
 
 from .gui_browser import Browser, printableField
 from .gui_about import AboutDialog
+from .gui_settings import SettingsDialog
 from .waveform_gl import GLWaveformWidget
 from .preview_waveform_qt import PreviewWaveformWidget
 from prodj.network.packets import PlayStateStopped
@@ -47,6 +48,7 @@ class BeatBarWidget(QWidget):
 
 class PlayerWidget(QFrame):
   time_mode_remain_changed_signal = pyqtSignal(bool)
+  ltc_assign_signal = pyqtSignal(int, bool)
 
   def __init__(self, player_number, parent):
     super().__init__(parent)
@@ -100,13 +102,33 @@ class PlayerWidget(QFrame):
     action_stop.triggered.connect(self.playbackStop)
     self.menu_button.setMenu(self.menu)
 
+    self.ltc_assign_button = QPushButton("LTC ASSIGN", self)
+    self.ltc_assign_button.setCheckable(True)
+    self.ltc_assign_button.setStyleSheet("""
+      QPushButton {
+        color: black;
+        font: bold 10px;
+        background-color: gray;
+        padding: 1px 4px;
+        border-style: outset;
+        border-radius: 2px;
+        border-width: 1px;
+        border-color: #444;
+      }
+      QPushButton:checked {
+        background-color: green;
+      }
+    """)
+    self.ltc_assign_button.toggled.connect(self.ltcAssignToggled)
+
     self.labels["play_state"] = QLabel(self)
     self.labels["play_state"].setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
 
     buttons_layout = QHBoxLayout()
     buttons_layout.addWidget(self.menu_button)
+    buttons_layout.addWidget(self.ltc_assign_button)
     buttons_layout.addWidget(self.labels["play_state"])
-    buttons_layout.setStretch(1, 1)
+    buttons_layout.setStretch(2, 1)
     buttons_layout.setSpacing(3)
 
     # time and beat bar
@@ -345,6 +367,14 @@ class PlayerWidget(QFrame):
   def playbackStop(self):
     self.parent_gui.prodj.vcdj.command_fader_start_single(self.player_number, start=False)
 
+  def ltcAssignToggled(self, checked):
+    self.ltc_assign_signal.emit(self.player_number, checked)
+
+  def setLtcAssigned(self, assigned):
+    was_blocked = self.ltc_assign_button.blockSignals(True)
+    self.ltc_assign_button.setChecked(assigned)
+    self.ltc_assign_button.blockSignals(was_blocked)
+
   # make browser dialog close when player window disappears
   def hideEvent(self, event):
     if self.browse_dialog is not None:
@@ -361,6 +391,9 @@ class Gui(QWidget):
   keepalive_signal = pyqtSignal(int)
   client_change_signal = pyqtSignal(int)
   dbclient_signal = pyqtSignal(object, object, object, object, object)
+  ltc_enabled_signal = pyqtSignal(bool)
+  ltc_settings_signal = pyqtSignal(object)
+  ltc_assign_signal = pyqtSignal(int)
 
   def __init__(self, prodj, show_color_waveform=False, show_color_preview=False, arg_layout="xy", player_slots=4):
     super().__init__()
@@ -378,6 +411,10 @@ class Gui(QWidget):
     self.show_color_preview = show_color_preview
     self.player_slots = player_slots
     self.about_dialog = None
+    self.settings_dialog = None
+    self.ltc_settings = None
+    self.ltc_available = False
+    self.ltc_assigned_player = None
 
     self.players = {}
     self.main_layout = QVBoxLayout(self)
@@ -421,22 +458,97 @@ class Gui(QWidget):
       logo.setPixmap(logo_pixmap.scaledToHeight(44, Qt.SmoothTransformation))
     logo.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
 
+    header_button_style = """
+      QPushButton {
+        color: black;
+        font: bold 10px;
+        background-color: gray;
+        padding: 4px 10px;
+        border-style: outset;
+        border-radius: 2px;
+        border-width: 1px;
+        border-color: #444;
+      }
+      QPushButton:checked {
+        background-color: green;
+      }
+      QPushButton:disabled {
+        color: #333;
+        background-color: #555;
+      }
+      QPushButton::menu-indicator {
+        image: none;
+        width: 0px;
+      }
+    """
+
+    self.ltc_enable_button = QPushButton("LTC ENABLE", header)
+    self.ltc_enable_button.setCheckable(True)
+    self.ltc_enable_button.setEnabled(False)
+    self.ltc_enable_button.setStyleSheet(header_button_style)
+    self.ltc_enable_button.toggled.connect(self.ltc_enabled_signal.emit)
+
+    self.mtc_enable_button = QPushButton("MTC ENABLE", header)
+    self.mtc_enable_button.setCheckable(True)
+    self.mtc_enable_button.setEnabled(False)
+    self.mtc_enable_button.setStyleSheet(header_button_style)
+
     self.header_menu_button = QPushButton("MENU", header)
     self.header_menu_button.setFlat(True)
-    self.header_menu_button.setStyleSheet("QPushButton { color: white; font: bold 10px; background-color: black; padding: 4px 8px; border-style: outset; border-radius: 2px; border-width: 1px; border-color: gray; }")
+    self.header_menu_button.setStyleSheet(header_button_style)
     self.header_menu = QMenu(self.header_menu_button)
-    self.header_menu.addAction("Settings").setEnabled(False)
+    settings_action = self.header_menu.addAction("Settings")
+    settings_action.triggered.connect(self.openSettingsDialog)
     about_action = self.header_menu.addAction("About")
     about_action.triggered.connect(self.openAboutDialog)
     self.header_menu_button.setMenu(self.header_menu)
 
     header_layout.addWidget(logo)
     header_layout.addStretch(1)
+    header_layout.addWidget(self.ltc_enable_button)
+    header_layout.addWidget(self.mtc_enable_button)
     header_layout.addWidget(self.header_menu_button)
 
     self.main_layout.addWidget(header)
     self.main_layout.addLayout(self.layout, 1)
+
+  def setLtcAvailable(self, available):
+    self.ltc_available = available
+    self.ltc_enable_button.setEnabled(available)
+
+  def setLtcEnabled(self, enabled):
+    was_blocked = self.ltc_enable_button.blockSignals(True)
+    self.ltc_enable_button.setChecked(enabled)
+    self.ltc_enable_button.blockSignals(was_blocked)
+
+  def isLtcEnabled(self):
+    return self.ltc_enable_button.isChecked()
+
+  def setLtcSettings(self, settings):
+    self.ltc_settings = settings
+
+  def setLtcAssignedPlayer(self, player_number):
+    self.ltc_assigned_player = player_number
+    for pn, player in self.players.items():
+      player.setLtcAssigned(pn == player_number)
+
+  def playerLtcAssignToggled(self, player_number, assigned):
+    if assigned:
+      self.setLtcAssignedPlayer(player_number)
+      self.ltc_assign_signal.emit(player_number)
+    elif self.ltc_assigned_player == player_number:
+      self.ltc_assigned_player = None
+      self.ltc_assign_signal.emit(0)
   
+  def openSettingsDialog(self):
+    if self.ltc_settings is None:
+      return
+    dialog = SettingsDialog(self.ltc_settings, self)
+    if dialog.exec() == dialog.Accepted:
+      settings = dialog.settings()
+      self.setLtcSettings(settings)
+      self.ltc_settings_signal.emit(settings)
+
   def openAboutDialog(self):
     if self.about_dialog is None:
       self.about_dialog = AboutDialog(self)
@@ -478,8 +590,10 @@ class Gui(QWidget):
       return None
     logging.info("Creating player {}".format(player_number))
     self.players[player_number] = PlayerWidget(player_number, self)
+    self.players[player_number].ltc_assign_signal.connect(self.playerLtcAssignToggled)
     self.connect_linked_player_controls(player_number)
     self.players[player_number].show()
+    self.players[player_number].setLtcAssigned(player_number == self.ltc_assigned_player)
     self.update_player_layout()
     return self.players[player_number]
 

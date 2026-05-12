@@ -135,6 +135,8 @@ class LTCService:
       logging.debug("LTC buffer status: queued %.1f ms", queued_ms)
 
   def start(self):
+    if self.running:
+      return
     logging.info(
       "Starting LTC output for player %d at %.3f fps on device %s with %.1f ms compensation, %.1f ms buffer",
       self.player_number,
@@ -151,6 +153,8 @@ class LTCService:
     self.producer_thread.start()
 
   def stop(self):
+    if not self.running and self.output.stream is None:
+      return
     self.running = False
     if self.producer_thread is not None:
       self.producer_thread.join(timeout=1)

@@ -9,6 +9,7 @@ import argparse
 
 from prodj.core.prodj import ProDj
 from prodj.gui.gui import Gui
+from prodj.gui.gui_settings import LtcSettings
 from prodj.audio.output import OutputConfig, format_output_devices
 from prodj.timecode.ltc_service import LTCService
 
@@ -76,6 +77,18 @@ gui = Gui(
   arg_layout=args.layout,
   player_slots=args.player_slots,
 )
+initial_ltc_settings = LtcSettings(
+  device=args.ltc_device,
+  output_channel=args.ltc_channel,
+  fps=args.ltc_fps,
+  sample_rate=args.ltc_sample_rate,
+  blocksize=args.ltc_blocksize,
+  volume=args.ltc_volume,
+  compensation_ms=args.ltc_compensation_ms,
+  buffer_ms=args.ltc_buffer_ms,
+)
+gui.setLtcSettings(initial_ltc_settings)
+gui.setLtcAvailable(True)
 if args.fullscreen:
   gui.setWindowState(Qt.WindowFullScreen | Qt.WindowMaximized | Qt.WindowActive)
 
@@ -99,28 +112,97 @@ vcdj_player = args.vcdj_player if args.vcdj_player is not None else args.player_
 prodj.vcdj_set_player_number(vcdj_player)
 prodj.vcdj_enable()
 
-ltc = None
-if args.ltc_player is not None:
+ltc_state = {
+  "service": None,
+  "settings": initial_ltc_settings,
+  "player_number": args.ltc_player,
+}
+
+def create_ltc_service(settings):
+  if ltc_state["player_number"] is None:
+    return None
   ltc_config = OutputConfig(
-    device=args.ltc_device,
-    sample_rate=args.ltc_sample_rate,
-    channels=args.ltc_channel + 1,
-    blocksize=args.ltc_blocksize,
+    device=settings.device,
+    sample_rate=settings.sample_rate,
+    channels=settings.output_channel + 1,
+    blocksize=settings.blocksize,
   )
-  ltc = LTCService(
+  return LTCService(
     prodj,
-    args.ltc_player,
+    ltc_state["player_number"],
     output_config=ltc_config,
-    output_channel=args.ltc_channel,
-    fps=args.ltc_fps,
-    volume=args.ltc_volume,
-    latency_compensation_ms=args.ltc_compensation_ms,
-    target_buffer_ms=args.ltc_buffer_ms,
+    output_channel=settings.output_channel,
+    fps=settings.fps,
+    volume=settings.volume,
+    latency_compensation_ms=settings.compensation_ms,
+    target_buffer_ms=settings.buffer_ms,
   )
-  ltc.start()
+
+def apply_ltc_settings(settings):
+  was_enabled = gui.isLtcEnabled()
+  if ltc_state["service"] is not None:
+    ltc_state["service"].stop()
+  ltc_state["settings"] = settings
+  try:
+    ltc_state["service"] = create_ltc_service(settings)
+  except Exception as e:
+    logging.exception("Failed to configure LTC output: %s", e)
+    ltc_state["service"] = None
+    gui.setLtcAvailable(False)
+    gui.setLtcEnabled(False)
+    return
+  gui.setLtcAvailable(True)
+  if was_enabled:
+    start_ltc_service()
+
+def start_ltc_service():
+  if ltc_state["service"] is None:
+    return
+  try:
+    ltc_state["service"].start()
+  except Exception as e:
+    logging.exception("Failed to start LTC output: %s", e)
+    gui.setLtcEnabled(False)
+
+def assign_ltc_player(player_number):
+  was_enabled = gui.isLtcEnabled()
+  if ltc_state["service"] is not None:
+    ltc_state["service"].stop()
+  if player_number <= 0:
+    ltc_state["player_number"] = None
+    ltc_state["service"] = None
+    gui.setLtcAssignedPlayer(None)
+    return
+  ltc_state["player_number"] = player_number
+  gui.setLtcAssignedPlayer(player_number)
+  ltc_state["service"] = create_ltc_service(ltc_state["settings"])
+  gui.setLtcAvailable(True)
+  if was_enabled:
+    start_ltc_service()
+
+def set_ltc_enabled(enabled):
+  if ltc_state["service"] is None:
+    apply_ltc_settings(ltc_state["settings"])
+  if ltc_state["service"] is None:
+    return
+  if enabled:
+    start_ltc_service()
+  else:
+    ltc_state["service"].stop()
+
+gui.ltc_settings_signal.connect(apply_ltc_settings)
+gui.ltc_enabled_signal.connect(set_ltc_enabled)
+gui.ltc_assign_signal.connect(assign_ltc_player)
+
+if args.ltc_player is not None:
+  gui.setLtcAssignedPlayer(args.ltc_player)
+  apply_ltc_settings(initial_ltc_settings)
+  if ltc_state["service"] is not None:
+    gui.setLtcEnabled(True)
+    start_ltc_service()
 
 app.exec()
 logging.info("Shutting down...")
-if ltc is not None:
-  ltc.stop()
+if ltc_state["service"] is not None:
+  ltc_state["service"].stop()
 prodj.stop()
