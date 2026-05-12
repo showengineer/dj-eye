@@ -23,14 +23,15 @@ class LtcSettings:
   blocksize: int
   volume: float
   compensation_ms: float
-  buffer_ms: float
+  buffer_ms: float | None
 
 
 class SettingsDialog(QDialog):
   def __init__(self, settings: LtcSettings, parent=None):
     super().__init__(parent)
     self.setWindowTitle("Settings")
-    self.setFixedSize(520, 360)
+    self.setFixedSize(520, 330)
+    self.ltc_settings = settings
     self.devices = []
 
     self.device = QComboBox(self)
@@ -77,11 +78,6 @@ class SettingsDialog(QDialog):
     self.compensation_ms.setDecimals(1)
     self.compensation_ms.setValue(settings.compensation_ms)
 
-    self.buffer_ms = QDoubleSpinBox(self)
-    self.buffer_ms.setRange(10, 1000)
-    self.buffer_ms.setDecimals(1)
-    self.buffer_ms.setValue(settings.buffer_ms)
-
     form = QFormLayout()
     form.addRow("Audio output", self.device)
     form.addRow("Output channel", self.output_channel)
@@ -90,7 +86,6 @@ class SettingsDialog(QDialog):
     form.addRow("Block size", self.blocksize)
     form.addRow("Volume", self.volume)
     form.addRow("LTC compentation ms", self.compensation_ms)
-    form.addRow("Buffer ms", self.buffer_ms)
 
     buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, self)
     buttons.accepted.connect(self.accept)
@@ -165,5 +160,5 @@ class SettingsDialog(QDialog):
       blocksize=self.blocksize.value(),
       volume=self.volume.value(),
       compensation_ms=self.compensation_ms.value(),
-      buffer_ms=self.buffer_ms.value(),
+      buffer_ms=self.ltc_settings.buffer_ms,
     )

@@ -203,6 +203,8 @@ class SoundDeviceOutput:
     self.output_channel = output_channel
     self.stream = None
     self.status_count = 0
+    self.stream_latency_ms = None
+    self.device_output_latency_ms = None
 
   def start(self):
     if self.stream is not None:
@@ -226,6 +228,7 @@ class SoundDeviceOutput:
     block_ms = self.config.blocksize / self.config.sample_rate * 1000
     latency = self.stream.latency
     latency_ms = latency * 1000 if isinstance(latency, (int, float)) else latency
+    self.stream_latency_ms = latency_ms if isinstance(latency_ms, (int, float)) else None
     logging.info(
       "Started sounddevice output stream on device %s, latency %s ms, block %.1f ms",
       self.config.device,
@@ -239,11 +242,16 @@ class SoundDeviceOutput:
     self.stream.stop()
     self.stream.close()
     self.stream = None
+    self.device_output_latency_ms = None
     logging.info("Stopped sounddevice output stream")
 
   def _callback(self, outdata, frames, device_info, status):
     if status:
       self.status_count += 1
+    current_time = getattr(device_info, "currentTime", None)
+    output_time = getattr(device_info, "outputBufferDacTime", None)
+    if current_time is not None and output_time is not None:
+      self.device_output_latency_ms = (output_time - current_time) * 1000
     audio = self.callback(frames, self.config.sample_rate, device_info)
     audio = np.asarray(audio, dtype=np.float32)
     outdata.fill(0)

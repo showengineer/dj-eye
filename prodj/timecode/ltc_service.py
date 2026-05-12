@@ -7,7 +7,8 @@ from prodj.timecode import ClockSource
 from prodj.timecode.linear.encode import LTCStreamGenerator
 
 LTC_BUFFER_SECONDS = 0.500
-LTC_TARGET_BUFFER_MS = 120
+LTC_MIN_TARGET_BUFFER_MS = 80
+LTC_TARGET_BUFFER_BLOCKS = 4
 LTC_PRODUCER_LOG_INTERVAL = 2.0
 
 
@@ -21,7 +22,7 @@ class LTCService:
       fps=25,
       volume=0.8,
       latency_compensation_ms=0,
-      target_buffer_ms=LTC_TARGET_BUFFER_MS):
+      target_buffer_ms=None):
     self.prodj = prodj
     self.player_number = player_number
     self.output_config = output_config or OutputConfig()
@@ -29,8 +30,11 @@ class LTCService:
     self.fps = fps
     self.volume = volume
     self.latency_compensation_ms = latency_compensation_ms
-    self.target_buffer_ms = target_buffer_ms
     self.sample_rate = self.output_config.sample_rate
+    if target_buffer_ms is None:
+      block_ms = self.output_config.blocksize / self.sample_rate * 1000
+      target_buffer_ms = max(LTC_MIN_TARGET_BUFFER_MS, block_ms * LTC_TARGET_BUFFER_BLOCKS)
+    self.target_buffer_ms = target_buffer_ms
     capacity_seconds = max(LTC_BUFFER_SECONDS, target_buffer_ms / 1000 * 2)
     self.buffer = MonoRingBuffer(int(self.sample_rate * capacity_seconds))
     self.target_buffer_frames = int(self.sample_rate * target_buffer_ms / 1000)
@@ -72,6 +76,9 @@ class LTCService:
 
   def read_audio(self, frames, sample_rate, device_info=None):
     return self.buffer.read(frames)
+
+  def output_latency_ms(self):
+    return self.output.device_output_latency_ms or self.output.stream_latency_ms
 
   def produce_audio_once(self):
     if self.clock_source.get_transport_rate() <= 0:

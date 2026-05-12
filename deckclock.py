@@ -3,7 +3,7 @@
 import logging
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtGui import QPalette
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QTimer
 import signal
 import argparse
 
@@ -54,7 +54,7 @@ parser.add_argument('--ltc-sample-rate', type=int, default=48000, help='LTC audi
 parser.add_argument('--ltc-blocksize', type=int, default=512, help='LTC audio callback block size')
 parser.add_argument('--ltc-volume', type=float, default=0.8, help='LTC output volume')
 parser.add_argument('--ltc-compensation-ms', type=float, default=0, help='Generate LTC this many milliseconds ahead to compensate fixed output latency')
-parser.add_argument('--ltc-buffer-ms', type=float, default=120, help='Target producer buffer for LTC audio')
+parser.add_argument('--ltc-buffer-ms', type=float, default=None, help='Override target producer buffer for LTC audio in milliseconds')
 
 args = parser.parse_args()
 
@@ -159,13 +159,20 @@ def create_ltc_service(settings):
 
 def set_ltc_footer_status(service):
   device_info, hostapi_info = get_ltc_device_info(service.output_config)
-  gui.setFooterText(
-    "{} device {} opened at {:g} kHz".format(
-      ltc_hostapi_label(hostapi_info["name"]),
-      device_info["name"],
-      service.output_config.sample_rate / 1000,
-    )
+  text = "{} device {} opened at {:g} kHz".format(
+    ltc_hostapi_label(hostapi_info["name"]),
+    device_info["name"],
+    service.output_config.sample_rate / 1000,
   )
+  output_latency_ms = service.output_latency_ms()
+  if output_latency_ms is not None:
+    text += " / output latency {:.1f} ms".format(output_latency_ms)
+  gui.setFooterText(text)
+
+def refresh_ltc_footer_status():
+  service = ltc_state["service"]
+  if service is not None and service.running:
+    set_ltc_footer_status(service)
 
 def apply_ltc_settings(settings):
   was_enabled = gui.isLtcEnabled()
@@ -226,6 +233,10 @@ def set_ltc_enabled(enabled):
 gui.ltc_settings_signal.connect(apply_ltc_settings)
 gui.ltc_enabled_signal.connect(set_ltc_enabled)
 gui.ltc_assign_signal.connect(assign_ltc_player)
+
+ltc_status_timer = QTimer()
+ltc_status_timer.timeout.connect(refresh_ltc_footer_status)
+ltc_status_timer.start(1000)
 
 if args.ltc_player is not None:
   gui.setLtcAssignedPlayer(args.ltc_player)
