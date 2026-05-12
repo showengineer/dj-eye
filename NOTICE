@@ -1,0 +1,22 @@
+DeckClock
+Copyright 2026 ShowEngineering
+
+DeckClock monitors compatible DJ players and generates LTC/timecode from
+their transport data.
+
+This product includes modified portions of python-prodj-link:
+https://github.com/flesniak/python-prodj-link
+
+The original python-prodj-link project is licensed under the Apache License,
+Version 2.0. A copy of that license is included with this distribution.
+
+Modifications include additional user interface elements, LTC/timecode
+generation, audio output support, transport clock handling and application
+branding.
+
+ShowEngineering, the ShowEngineering logo and other branding are
+names or branding assets of ShowEngineering.
+
+Pioneer, CDJ, XDJ, DJM, rekordbox and related names are trademarks of their
+respective owners. This project is not affiliated with or endorsed by
+AlphaTheta/Pioneer DJ.

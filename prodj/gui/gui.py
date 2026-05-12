@@ -366,7 +366,7 @@ class Gui(QWidget):
     super().__init__()
     self.prodj = prodj
     self.setWindowIcon(QIcon("favicon.ico"))
-    self.setWindowTitle('ShowEngineering\'s Dj-Eye v0.91 BETA')
+    self.setWindowTitle('DeckClock')
 
     self.setAutoFillBackground(True)
 

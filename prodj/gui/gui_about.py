@@ -14,7 +14,7 @@ class AboutDialog(QDialog):
     self.setWindowTitle("About")
     self.setFixedSize(450, 420)
 
-    title = QLabel("Dj-Eye", self)
+    title = QLabel("DeckClock", self)
     title.setStyleSheet("QLabel { color: white; font: bold 18pt; }")
     title.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
