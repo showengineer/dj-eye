@@ -73,13 +73,14 @@ The program has been already **successfully tested** the script against the foll
 * And some info from Austin Wright's [libpdjl](https://bitbucket.org/awwright/libpdjl)
 
 ## License
-The original code was licensed under the Apache License, Version 2.0 (the "License").
-You may obtain a copy of the License inside the "LICENSE" file or at
+DeckClock is based on python-prodj-link, originally licensed under the Apache License,
+Version 2.0. Portions of this repository are derived from that project and remain subject
+to the original Apache 2.0 license and notices.
 
-http://www.apache.org/licenses/LICENSE-2.0
+ShowEngineering names, logos, and other branding assets included in this repository are
+copyrighted material and are not licensed for reuse under the Apache License.
 
-This repo contains portions that are copyright protected. You may find the specifics of
-these in the "NOTICE" file.
+See LICENSE and NOTICE for details.
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
