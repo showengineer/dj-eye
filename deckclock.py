@@ -30,7 +30,7 @@ def arg_player_slots(value):
     raise argparse.ArgumentTypeError("%s is not 4 or 6".format(value))
   return number
 
-parser = argparse.ArgumentParser(description='Python ProDJ Link')
+parser = argparse.ArgumentParser(description='DeckClock')
 provider_group = parser.add_mutually_exclusive_group()
 provider_group.add_argument('--disable-pdb', dest='enable_pdb', action='store_false', help='Disable PDB provider')
 provider_group.add_argument('--disable-dbc', dest='enable_dbc', action='store_false', help='Disable DBClient provider')
