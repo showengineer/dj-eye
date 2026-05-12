@@ -45,7 +45,7 @@ class AboutDialog(QDialog):
         Version 2.0.
       </p>
         <p>
-                 ShowEngineering, it's logo and other branding &copy; 2026 ShowEngineering, all rights reserved.
+                 ShowEngineering, its logo and other branding &copy; 2026 ShowEngineering, all rights reserved.
         </p>
       <p>
         Pioneer, CDJ, XDJ, DJM, rekordbox and related names are trademarks of
