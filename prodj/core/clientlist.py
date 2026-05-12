@@ -194,7 +194,7 @@ class ClientList:
     elif beat_packet.type == "type_absolute_position":
       if not c.supports_absolute_position_packets:
         c.supports_absolute_position_packets = True
-      new_actual_pitch = beat_packet.content.pitch / 100
+      new_actual_pitch = beat_packet.content.pitch
       if c.actual_pitch != new_actual_pitch:
         c.actual_pitch = new_actual_pitch
         client_changed = True

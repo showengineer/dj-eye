@@ -1,5 +1,6 @@
 import logging
 import os
+from construct import ConstructError
 
 from prodj.data.exceptions import FatalQueryError
 from prodj.data.datastore import DataStore
@@ -92,8 +93,11 @@ class PDBProvider:
     ext = self.prodj.nfs.enqueue_buffer_download(player.ip_addr, slot, anlz_path.replace("DAT", "EXT"))
     db = UsbAnlzDatabase()
     if dat is not None and ext is not None:
-      db.load_dat_buffer(dat)
-      db.load_ext_buffer(ext)
+      try:
+        db.load_dat_buffer(dat)
+        db.load_ext_buffer(ext)
+      except (ConstructError, RuntimeError) as e:
+        logging.warning("failed to parse DAT/EXT data for %s, returning empty UsbAnlzDatabase: %s", anlz_path, e)
     else:
       logging.warning("missing DAT or EXT data, returning empty UsbAnlzDatabase")
     return db

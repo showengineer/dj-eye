@@ -1,7 +1,7 @@
 import socket
 import logging
 from select import select
-from construct import MappingError, StreamError, RangeError, byte2int
+from construct import ConstructError, byte2int
 
 from prodj.network import packets
 from prodj.data import dataprovider
@@ -247,8 +247,8 @@ class DBClient:
       data += new_data
       try:
         return packets.DBMessage.parse(data)
-      except (StreamError, RangeError, TypeError) as e:
-        logging.debug("Received %d bytes but parsing failed, trying to receive more", len(data))
+      except (ConstructError, TypeError) as e:
+        logging.debug("Received %d bytes but parsing failed, trying to receive more: %s", len(data), e)
         parse_errors += 1
     raise TemporaryQueryError("Failed to receive dbmessage after {} tries and {} timeouts".format(parse_errors, receive_timeouts))
 
@@ -291,7 +291,7 @@ class DBClient:
 
     try:
       reply = self.receive_dbmessage(sock)
-    except (RangeError, MappingError, KeyError) as e:
+    except (ConstructError, KeyError, TypeError) as e:
       logging.error("parsing %s query failed on player %d failed: %s", query["type"], player_number, str(e))
       return None
     if reply is None or reply["type"] != "success":
@@ -331,8 +331,8 @@ class DBClient:
       data += new_data
       try:
         reply = packets.ManyDBMessages.parse(data)
-      except (RangeError, MappingError, KeyError, TypeError) as e:
-        logging.debug("failed to parse %s render reply (%d bytes), trying to receive more", request_type, len(data))
+      except (ConstructError, KeyError, TypeError) as e:
+        logging.debug("failed to parse %s render reply (%d bytes), trying to receive more: %s", request_type, len(data), e)
         parse_errors += 1
       else:
         if reply[-1]["type"] != "menu_footer":
@@ -380,7 +380,7 @@ class DBClient:
     self.socksnd(sock, data)
     try:
       reply = self.receive_dbmessage(sock)
-    except (RangeError, MappingError, KeyError, TypeError) as e:
+    except (ConstructError, KeyError, TypeError) as e:
       logging.error("%s query parse error: %s", request_type, str(e))
       return None
     if reply is None:
@@ -402,7 +402,10 @@ class DBClient:
       sock.send(packets.DBServerQuery.build({}))
       data = sockrcv(sock, 2)
       sock.close()
-      port = packets.DBServerReply.parse(data)
+      try:
+        port = packets.DBServerReply.parse(data)
+      except ConstructError as e:
+        raise TemporaryQueryError("failed to parse DB server port reply from player {}: {}".format(player_number, e))
       self.remote_ports[player_number] = (client.ip_addr, port)
       logging.info("DBClient port of player {}: {}".format(player_number, port))
     return self.remote_ports[player_number]
@@ -427,7 +430,10 @@ class DBClient:
     data = sockrcv(sock, 48)
     if len(data) == 0:
       raise TemporaryQueryError("Failed to connect to player {}".format(player_number))
-    reply = packets.DBMessage.parse(data)
+    try:
+      reply = packets.DBMessage.parse(data)
+    except ConstructError as e:
+      raise TemporaryQueryError("failed to parse DB setup reply from player {}: {}".format(player_number, e))
     logging.info("connected to player {}".format(reply["args"][1]["value"]))
 
   def getTransactionId(self, player_number):
@@ -534,17 +540,23 @@ class DBClient:
       return self.query_blob(*params, "preview_waveform_request")
     elif request == "color_waveform":
       blob = self.query_blob(*params, "color_waveform_request", 1)
-      return None if blob is None else AnlzTag.parse(blob[4:]).content.entries
+      try:
+        return None if blob is None else AnlzTag.parse(blob[4:]).content.entries
+      except ConstructError as e:
+        raise FatalQueryError("failed to parse color waveform data: {}".format(e))
     elif request == "color_preview_waveform":
       blob = self.query_blob(*params, "color_preview_waveform_request")
-      return None if blob is None else AnlzTag.parse(blob[4:]).content.entries
+      try:
+        return None if blob is None else AnlzTag.parse(blob[4:]).content.entries
+      except ConstructError as e:
+        raise FatalQueryError("failed to parse color preview waveform data: {}".format(e))
     elif request == "beatgrid":
       reply = self.query_blob(*params, "beatgrid_request")
       if reply is None:
         return None
       try: # pre-parse beatgrid data (like metadata) for easier access
         return packets.Beatgrid.parse(reply)["beats"]
-      except (RangeError, FieldError) as e:
+      except ConstructError as e:
         raise FatalQueryError("failed to parse beatgrid data: {}".format(e))
     elif request == "mount_info":
       return self.query_list(*params[:2], None, [params[2]], "mount_info_request")

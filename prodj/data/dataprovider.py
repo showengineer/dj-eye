@@ -221,4 +221,7 @@ class DataProvider(Thread):
       except FatalQueryError as e:
         logging.error("%s request failed: %s", request[0], e)
         self.queue.task_done()
+      except Exception as e:
+        logging.exception("%s request crashed: %s", request[0], e)
+        self._retry_request(request)
     logging.debug("DataProvider shutting down")

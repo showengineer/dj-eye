@@ -2,7 +2,7 @@
 # https://github.com/brunchboy/dysentery
 # https://bitbucket.org/awwright/libpdjl
 
-from construct import Adapter, Array, Byte, Bytes, Const, CString, Default, Enum, ExprAdapter, FlagsEnum, FocusedSeq, GreedyBytes, GreedyRange, Int8ub, Int16ub, Int32ub, Int64ub, Int16ul, Int32ul, Padded, Padding, Pass, PascalString, PaddedString, Prefixed, Rebuild, Struct, Subconstruct, Switch, StopIf, this, len_
+from construct import Adapter, Array, Byte, Bytes, Const, CString, Default, Enum, ExprAdapter, FlagsEnum, FocusedSeq, GreedyBytes, GreedyRange, Int8ub, Int16ub, Int32ub, Int32sb, Int64ub, Int16ul, Int32ul, Padded, Padding, Pass, PascalString, PaddedString, Prefixed, Rebuild, Struct, Subconstruct, Switch, StopIf, this, len_
 
 class IpAddrAdapter(Adapter):
   def _encode(self, obj, context, path):
@@ -110,6 +110,13 @@ class PitchAdapter(Adapter):
     return obj/0x100000
 Pitch = PitchAdapter(Int32ub)
 
+class AbsolutePitchAdapter(Adapter):
+  def _encode(self, obj, context, path):
+    return round((obj - 1) * 10000)
+  def _decode(self, obj, context, path):
+    return 1 + obj/10000
+AbsolutePitch = AbsolutePitchAdapter(Int32sb)
+
 class BpmAdapter(Adapter):
   def _encode(self, obj, context, path):
     return obj*100
@@ -170,7 +177,7 @@ BeatPacket = Struct(
     "type_absolute_position": Struct(
       "track_len" / Int32ub, # rounded to the nearest second
       "playhead" / Int32ub, # position (mil)
-      "pitch" / Int32ub, # pitch multiplied by 100
+      "pitch" / AbsolutePitch, # signed pitch percent multiplied by 100
       Padding(8),
       "bpm" / Int32ub # bpm multiplied by 10
     ),

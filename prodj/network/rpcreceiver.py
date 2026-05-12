@@ -70,9 +70,11 @@ class RpcReceiver:
     result_future, _ = self.requests.pop(rpcreply.xid)
 
     if rpcreply.content.reply_stat != "accepted":
-      result_future.set_exception(RuntimeError("RPC call denied: "+rpcreply.content.reject_stat))
+      result_future.set_exception(RuntimeError("RPC call denied: "+str(rpcreply.content.content.reject_stat)))
+      return
     if rpcreply.content.content.accept_stat != "success":
-      result_future.set_exception(RuntimeError("RPC call unsuccessful: "+rpcreply.content.content.accept_stat))
+      result_future.set_exception(RuntimeError("RPC call unsuccessful: "+str(rpcreply.content.content.accept_stat)))
+      return
 
     result_future.set_result(rpcreply.content.content.content)
 

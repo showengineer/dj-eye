@@ -1,8 +1,31 @@
 import unittest
-from prodj.network.packets import DBField, DBMessage
+from prodj.network.packets import BeatPacket, DBField, DBMessage
 from construct import Container
 
 class PacketsTestCase(unittest.TestCase):
+    def test_absolute_position_pitch_is_signed_centi_percent(self):
+        data = (
+            b"Qspt1WmJOL" +
+            b"\x0b" +
+            b"CDJ-3000\x00" + (b"\x00" * 11) +
+            b"\x01\x00" +
+            b"\x03" +
+            b"\x00" +
+            b"\x3c" +
+            b"\x00\x00\x00\xb4" +
+            b"\x00\x01\x13\xb1" +
+            b"\xff\xff\xff\xfb" +
+            b"\x00" * 8 +
+            b"\x00\x00\x05\x00"
+        )
+
+        packet = BeatPacket.parse(data)
+
+        self.assertEqual(packet.type, "type_absolute_position")
+        self.assertEqual(packet.player_number, 3)
+        self.assertEqual(packet.content.playhead, 70577)
+        self.assertAlmostEqual(packet.content.pitch, 0.9995)
+
     def test_string_parsing(self):
         self.assertEqual(
             DBField.parse(

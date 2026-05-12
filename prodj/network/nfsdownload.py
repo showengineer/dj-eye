@@ -47,6 +47,9 @@ class NfsDownload:
     self.size = lookup_result.attrs.size
     self.fhandle = lookup_result.fhandle
     self.started_at = time.time()
+    if self.size == 0:
+      self.finish()
+      return await asyncio.wrap_future(self.future)
     self.sendReadRequests()
     return await asyncio.wrap_future(self.future)
 
@@ -135,7 +138,7 @@ class NfsDownload:
       self.last_write_at = time.time()
     if len(self.blocks) > 0:
       logging.debug("%d blocks still in queue, first is %d",
-        len(self.blocks), self.blocks.keys()[0])
+        len(self.blocks), next(iter(self.blocks)))
 
   def downloadToFileHandler(self, data):
     self.download_file_handle.write(data)
@@ -156,7 +159,8 @@ class NfsDownload:
 
   def fail_download(self, message="Unknown error"):
     self.type = NfsDownloadType.failed
-    self.future.set_exception(RuntimeError(message))
+    if not self.future.done():
+      self.future.set_exception(RuntimeError(message))
 
 def generic_file_download_done_callback(future):
   if future.exception() is not None:

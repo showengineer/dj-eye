@@ -358,6 +358,7 @@ class PlayerWidget(QFrame):
 class Gui(QWidget):
   keepalive_signal = pyqtSignal(int)
   client_change_signal = pyqtSignal(int)
+  dbclient_signal = pyqtSignal(object, object, object, object, object)
 
   def __init__(self, prodj, show_color_waveform=False, show_color_preview=False, arg_layout="xy", player_slots=4):
     super().__init__()
@@ -368,6 +369,7 @@ class Gui(QWidget):
 
     self.keepalive_signal.connect(self.keepalive_slot)
     self.client_change_signal.connect(self.client_change_slot)
+    self.dbclient_signal.connect(self.dbclient_slot)
 
     self.show_color_waveform = show_color_waveform
     self.show_color_preview = show_color_preview
@@ -522,6 +524,9 @@ class Gui(QWidget):
         player.unload()
 
   def dbclient_callback(self, request, source_player_number, slot, item_id, reply):
+    self.dbclient_signal.emit(request, source_player_number, slot, item_id, reply)
+
+  def dbclient_slot(self, request, source_player_number, slot, item_id, reply):
     if request == "artwork":
       iterator = self.prodj.cl.clientsByLoadedTrackArtwork
     else:

@@ -3,7 +3,8 @@ import logging
 import os
 import socket
 import time
-from construct import Aligned, GreedyBytes
+from concurrent.futures import TimeoutError
+from construct import Aligned, ConstructError, GreedyBytes
 from threading import Thread
 
 from .packets_nfs import getNfsCallStruct, getNfsResStruct, MountMntArgs, MountMntRes, MountVersion, NfsVersion, PortmapArgs, PortmapPort, PortmapVersion, PortmapRes, RpcMsg
@@ -102,7 +103,10 @@ class NfsClient:
     }
     data = PortmapArgs.build(call)
     reply = await self.PortmapCall(ip, "getport", data)
-    port = PortmapRes.parse(reply)
+    try:
+      port = PortmapRes.parse(reply)
+    except ConstructError as e:
+      raise RuntimeError("PortmapGetPort reply parse failed: {}".format(e))
     if port == 0:
       raise RuntimeError("PortmapGetPort failed: Program not available")
     return port
@@ -110,7 +114,10 @@ class NfsClient:
   async def MountMnt(self, host, path):
     data = MountMntArgs.build(path)
     reply = await self.RpcCall(host, "mount", MountVersion, "mnt", data)
-    result = MountMntRes.parse(reply)
+    try:
+      result = MountMntRes.parse(reply)
+    except ConstructError as e:
+      raise RuntimeError("MountMnt reply parse failed: {}".format(e))
     if result.status != 0:
       raise RuntimeError("MountMnt failed with error {}".format(result.status))
     return result.fhandle
@@ -118,7 +125,10 @@ class NfsClient:
   async def NfsCall(self, host, proc, data):
     nfsdata = getNfsCallStruct(proc).build(data)
     reply = await self.RpcCall(host, "nfs", NfsVersion, proc, nfsdata)
-    nfsreply = getNfsResStruct(proc).parse(reply)
+    try:
+      nfsreply = getNfsResStruct(proc).parse(reply)
+    except ConstructError as e:
+      raise RuntimeError("NFS {} reply parse failed: {}".format(proc, e))
     if nfsreply.status != "ok":
       raise RuntimeError("NFS call failed: " + nfsreply.status)
     return nfsreply.content
@@ -165,7 +175,7 @@ class NfsClient:
     future = self.enqueue_download(ip, slot, src_path)
     try:
       return future.result(timeout=30)
-    except RuntimeError as e:
+    except (RuntimeError, TimeoutError, OSError) as e:
       logging.warning("returning empty buffer because: %s", e)
       return None
 

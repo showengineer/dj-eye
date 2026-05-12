@@ -2,6 +2,7 @@ import unittest
 from unittest.mock import Mock, patch
 import socket
 
+from prodj.network.nfsdownload import NfsDownload
 from prodj.network.nfsclient import NfsClient
 from prodj.network.packets_nfs import RpcMsg
 
@@ -29,3 +30,13 @@ class DbclientTestCase(unittest.TestCase):
     @patch('prodj.network.nfsclient.select')
     def test_buffer_download(self, select):
         self.nc.enqueue_buffer_download("1.1.1.1", "usb", "/folder/file")
+
+    def test_out_of_order_blocks_do_not_crash_debug_logging(self):
+        download = NfsDownload(None, ("1.1.1.1", 2049), b"", "/folder/file")
+        download.size = 4
+        download.blocks = {2: b"cd"}
+
+        download.writeBlocks()
+
+        self.assertEqual(download.write_offset, 0)
+        self.assertEqual(download.blocks, {2: b"cd"})
